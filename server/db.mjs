@@ -136,41 +136,59 @@ export const deleteDiagram = (id) =>
 export const importAll = (payload) => {
   let imported = 0;
   let skipped = 0;
-  const insertFolder = db.prepare(
-    'INSERT OR IGNORE INTO folders (id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-  );
-  for (const folder of payload.folders ?? []) {
-    const result = insertFolder.run(
-      folder.id,
-      folder.name,
-      folder.parentId ?? null,
-      folder.createdAt ?? now(),
-      folder.updatedAt ?? now()
+  const isNonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
+  db.exec('BEGIN');
+  try {
+    // Defer FK checks to COMMIT so folders sort before their parents on import.
+    db.exec('PRAGMA defer_foreign_keys = ON');
+    const insertFolder = db.prepare(
+      'INSERT OR IGNORE INTO folders (id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
     );
-    if (result.changes > 0) {
-      imported++;
-    } else {
-      skipped++;
+    for (const folder of payload.folders ?? []) {
+      if (!isNonEmpty(folder?.id) || !isNonEmpty(folder?.name)) {
+        skipped++;
+        continue;
+      }
+      const result = insertFolder.run(
+        folder.id,
+        folder.name,
+        folder.parentId ?? null,
+        folder.createdAt ?? now(),
+        folder.updatedAt ?? now()
+      );
+      if (result.changes > 0) {
+        imported++;
+      } else {
+        skipped++;
+      }
     }
-  }
-  const insertDiagram = db.prepare(
-    'INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
-  for (const diagram of payload.diagrams ?? []) {
-    const result = insertDiagram.run(
-      diagram.id,
-      diagram.folderId ?? null,
-      diagram.name,
-      diagram.state,
-      diagram.favorite ? 1 : 0,
-      diagram.createdAt ?? now(),
-      diagram.updatedAt ?? now()
+    const insertDiagram = db.prepare(
+      'INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
-    if (result.changes > 0) {
-      imported++;
-    } else {
-      skipped++;
+    for (const diagram of payload.diagrams ?? []) {
+      if (!isNonEmpty(diagram?.id) || !isNonEmpty(diagram?.name) || !isNonEmpty(diagram?.state)) {
+        skipped++;
+        continue;
+      }
+      const result = insertDiagram.run(
+        diagram.id,
+        diagram.folderId ?? null,
+        diagram.name,
+        diagram.state,
+        diagram.favorite ? 1 : 0,
+        diagram.createdAt ?? now(),
+        diagram.updatedAt ?? now()
+      );
+      if (result.changes > 0) {
+        imported++;
+      } else {
+        skipped++;
+      }
     }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
   return { imported, skipped };
 };

@@ -21,7 +21,7 @@
   import { clearCurrentDiagram, setCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { notify } from '$/util/notify';
   import { deserializeState } from '$/util/serde';
-  import { defaultState, replaceInputState } from '$/util/state.svelte';
+  import { defaultState, replaceInputState, sanitizeConfig } from '$/util/state.svelte';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import AddIcon from '~icons/material-symbols/add-rounded';
@@ -68,7 +68,9 @@
 
   const openDiagram = (diagram: Diagram) => {
     clearCurrentDiagram();
-    replaceInputState(deserializeState(diagram.state));
+    const next = deserializeState(diagram.state);
+    next.mermaid = sanitizeConfig(next.mermaid || defaultState.mermaid);
+    replaceInputState(next);
     setCurrentDiagram(diagram);
     void goto(resolve('/edit', {}));
   };
