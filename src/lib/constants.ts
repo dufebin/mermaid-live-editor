@@ -4,8 +4,10 @@ export const TID = {
   aiHelpText: 'ai-help-text',
   aiRepairButton: 'ai-repair-button',
   copyMarkdown: 'copy-markdown',
+  dashboardPage: 'dashboard-page',
   diagramCard: 'diagram-card',
   diagramDocumentationButton: 'diagram-documentation-button',
+  diagramsLink: 'diagrams-link',
   downloadPNG: 'download-PNG',
   downloadSVG: 'download-SVG',
   embedEditLink: 'embed-edit-link',
@@ -18,8 +20,12 @@ export const TID = {
   embedSnippet: 'embed-snippet',
   embedToolbar: 'embed-toolbar',
   errorContainer: 'error-container',
+  exportButton: 'export-button',
+  importInput: 'import-input',
+  newDiagramButton: 'new-diagram-button',
   saveButton: 'save-button',
   saveDialogInput: 'save-dialog-input',
+  searchInput: 'search-input',
   themeToggleButton: 'theme-toggle-button'
 } as const;
 

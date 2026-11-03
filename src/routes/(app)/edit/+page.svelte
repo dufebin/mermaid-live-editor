@@ -33,6 +33,7 @@
   import { validatedState, updateCodeStore, urls } from '$/util/state.svelte';
   import { logEvent, logMermaidChartClick } from '$/util/stats';
   import { getContactSalesUrl, initHandler } from '$/util/util';
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import CodeIcon from '~icons/custom/code';
   import HistoryIcon from '~icons/material-symbols/history';
@@ -115,6 +116,13 @@
   {/snippet}
 
   <Navbar mobileToggle={isMobile ? mobileToggle : undefined}>
+    <Button
+      size="sm"
+      variant="ghost"
+      data-testid={TID.diagramsLink}
+      href={resolve('/dashboard', {})}>
+      Diagrams
+    </Button>
     <Toggle bind:pressed={isHistoryOpen} size="sm" title="History" aria-label="History">
       <HistoryIcon />
     </Toggle>
