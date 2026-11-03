@@ -5,8 +5,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "pnpm build:embed && vite dev",
+    "dev:all": "node scripts/dev-all.mjs",
     "dev:force": "MERMAID_LOCAL=true pnpm dev --force",
     "dev:test": "pnpm dev",
+    "server": "node server/index.mjs",
     "build": "pnpm build:embed && vite build",
     "build:embed": "vite build --config vite.embed.config.js",
     "preview": "vite preview",

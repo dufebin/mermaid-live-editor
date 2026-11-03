@@ -30,6 +30,13 @@ export default defineConfig(({ mode }) => {
       }
     : undefined;
 
+  const apiProxy = {
+    '/api': {
+      changeOrigin: true,
+      target: serverEnv.API_PROXY_TARGET ?? 'http://127.0.0.1:18790'
+    }
+  };
+
   return {
     plugins: [
       tailwindcss(),
@@ -44,8 +51,8 @@ export default defineConfig(({ mode }) => {
       devtoolsJson()
     ],
     envPrefix: 'MERMAID_',
-    server: { host: true, port: 3000, proxy: aiProxy },
-    preview: { host: true, port: 3000, proxy: aiProxy },
+    server: { host: true, port: 3000, proxy: { ...(aiProxy ?? {}), ...apiProxy } },
+    preview: { host: true, port: 3000, proxy: { ...(aiProxy ?? {}), ...apiProxy } },
     // Vitest otherwise resolves Svelte's server build, where $effect is a no-op.
     resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
     test: {
