@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { EditorProps } from '$/types';
+  import { aiEnabled, editDiagramWithAI } from '$/util/ai';
   import { env } from '$/util/env';
+  import { notify } from '$/util/notify';
   import { urls, validatedState } from '$/util/state.svelte';
   import { logMermaidChartClick } from '$/util/stats';
   import { AIPromptViewZoneManager } from '$lib/util/AIPromptViewZoneManager';
@@ -32,6 +34,7 @@
   let popupPosition = $state({ top: 0, lineNumber: 0 });
   let decorationsCollection: monaco.editor.IEditorDecorationsCollection | undefined;
   let input = $state('');
+  let isLoading = $state(false);
   let lastMouseLine = 0;
   const aiPromptManager = new AIPromptViewZoneManager();
 
@@ -238,16 +241,30 @@
     <AIPromptPopup
       show={showPopup}
       bind:input
+      loading={isLoading}
       onHeightChange={(height) => aiPromptManager.updateHeight(height)}
       onClose={closePopup}
-      onTryFree={() => {
-        logMermaidChartClick('vibeDiagramming');
-        window.open(
-          urls.current.mermaidChart({ medium: 'vibe_diagramming' }).save,
-          '_blank',
-          'noopener'
-        );
-        closePopup();
+      onTryFree={async () => {
+        if (!aiEnabled) {
+          logMermaidChartClick('vibeDiagramming');
+          window.open(
+            urls.current.mermaidChart({ medium: 'vibe_diagramming' }).save,
+            '_blank',
+            'noopener'
+          );
+          closePopup();
+          return;
+        }
+        isLoading = true;
+        try {
+          const newCode = await editDiagramWithAI(input, currentText);
+          onUpdate(newCode);
+          closePopup();
+        } catch (error) {
+          notify(error instanceof Error ? error.message : 'AI request failed');
+        } finally {
+          isLoading = false;
+        }
       }} />
   </div>
 </div>
