@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Toaster } from '$/components/ui/sonner/index.js';
+  import { clearCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { loadingState } from '$/util/loading.svelte';
   import { toggleDarkTheme } from '$/util/state.svelte';
   import { initHandler } from '$/util/util';
@@ -17,6 +18,7 @@
   // Then move it into src and vite will bundle it automatically.
   onMount(() => {
     window.addEventListener('hashchange', () => {
+      clearCurrentDiagram();
       void initHandler();
     });
 

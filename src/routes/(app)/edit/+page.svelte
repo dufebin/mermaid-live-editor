@@ -1,6 +1,7 @@
 <script lang="ts">
   import Actions from '$/components/Actions.svelte';
   import Card from '$/components/Card/Card.svelte';
+  import SaveDialog from '$/components/Dashboard/SaveDialog.svelte';
   import DiagramDocButton from '$/components/DiagramDocumentationButton.svelte';
   import Editor from '$/components/Editor.svelte';
   import EnhancedEditsButton from '$/components/EnhancedEditsButton.svelte';
@@ -21,10 +22,14 @@
   import { Toggle } from '$/components/ui/toggle';
   import VersionSecurityToolbar from '$/components/VersionSecurityToolbar.svelte';
   import View from '$/components/View.svelte';
+  import { TID } from '$/constants';
   import type { EditorMode, Tab } from '$/types';
-  import { shouldShowEditorChooser } from '$/util/migration/domainMigration';
-  import { PanZoomState } from '$/util/panZoom';
+  import { updateDiagram } from '$/util/api';
+  import { currentDiagram, setCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { env } from '$/util/env';
+  import { shouldShowEditorChooser } from '$/util/migration/domainMigration';
+  import { notify } from '$/util/notify';
+  import { PanZoomState } from '$/util/panZoom';
   import { validatedState, updateCodeStore, urls } from '$/util/state.svelte';
   import { logEvent, logMermaidChartClick } from '$/util/stats';
   import { getContactSalesUrl, initHandler } from '$/util/util';
@@ -71,6 +76,23 @@
 
   let isHistoryOpen = $state(false);
 
+  let saveDialogOpen = $state(false);
+
+  const saveExisting = async () => {
+    const existing = currentDiagram.diagram;
+    if (!existing) {
+      return;
+    }
+    try {
+      setCurrentDiagram(
+        await updateDiagram(existing.id, { state: validatedState.current.serialized })
+      );
+      notify('Saved');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Save failed');
+    }
+  };
+
   let editorPane: Resizable.Pane | undefined;
   $effect(() => {
     if (isMobile) {
@@ -97,6 +119,19 @@
       <HistoryIcon />
     </Toggle>
     <Share />
+    <Button
+      variant="accent"
+      size="sm"
+      data-testid={TID.saveButton}
+      onclick={() => {
+        if (currentDiagram.diagram) {
+          void saveExisting();
+        } else {
+          saveDialogOpen = true;
+        }
+      }}>
+      Save
+    </Button>
     {#if env.isEnabledMermaidChartLinks}
       <Separator orientation="vertical" />
       <McWrapper labelPrefix="Opens ">
@@ -175,3 +210,4 @@
 </div>
 
 <EditorChooserModal bind:open={showEditorChooser} />
+<SaveDialog bind:open={saveDialogOpen} onOpenChange={(open) => (saveDialogOpen = open)} />

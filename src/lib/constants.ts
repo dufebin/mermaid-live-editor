@@ -17,6 +17,8 @@ export const TID = {
   embedSnippet: 'embed-snippet',
   embedToolbar: 'embed-toolbar',
   errorContainer: 'error-container',
+  saveButton: 'save-button',
+  saveDialogInput: 'save-dialog-input',
   themeToggleButton: 'theme-toggle-button'
 } as const;
 
