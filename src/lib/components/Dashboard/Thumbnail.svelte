@@ -1,3 +1,14 @@
+<script module lang="ts">
+  // mermaid.initialize is global; a single shared queue serializes renders
+  // across ALL thumbnail instances so cards do not race each other.
+  let queue: Promise<unknown> = Promise.resolve();
+  const enqueue = <T,>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+</script>
+
 <script lang="ts">
   import { render } from '$/util/mermaid';
   import { deserializeState } from '$/util/serde';
@@ -9,20 +20,14 @@
   let failed = $state(false);
   let svg = $state('');
 
-  // mermaid.initialize is global; serialize renders so cards do not race.
-  let queue: Promise<unknown> = Promise.resolve();
-  const renderQueued = (config: unknown, code: string) => {
-    const run = queue.then(() => render(config as never, code, `thumbnail-${id}`));
-    queue = run.catch(() => undefined);
-    return run;
-  };
-
   $effect(() => {
     failed = false;
     svg = '';
     try {
       const parsed = deserializeState(serialized);
-      void renderQueued(JSON.parse(parsed.mermaid || '{}'), parsed.code)
+      void enqueue(() =>
+        render(JSON.parse(parsed.mermaid || '{}') as never, parsed.code, `thumbnail-${id}`)
+      )
         .then((result) => {
           svg = result.svg;
         })
