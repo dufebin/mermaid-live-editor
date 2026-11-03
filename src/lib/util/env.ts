@@ -1,4 +1,6 @@
 export const env = {
+  aiEnabled: import.meta.env.MERMAID_AI_ENABLED === 'true',
+  aiModel: import.meta.env.MERMAID_AI_MODEL ?? '',
   analyticsUrl: import.meta.env.MERMAID_ANALYTICS_URL ?? '',
   docsUrl: import.meta.env.MERMAID_DOCS_URL ?? 'https://mermaid.js.org',
   domain: import.meta.env.MERMAID_DOMAIN ?? '',
