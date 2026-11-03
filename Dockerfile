@@ -40,3 +40,12 @@ EXPOSE 8080
 
 COPY ./nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=mermaid-live-editor-builder /app/docs /usr/share/nginx/html
+
+FROM docker.io/library/node:24.16.0-alpine3.22 AS storage-api
+
+ENV HOST=0.0.0.0
+WORKDIR /app
+COPY ./server ./server
+VOLUME /app/server-data
+EXPOSE 18790
+CMD ["node", "server/index.mjs"]

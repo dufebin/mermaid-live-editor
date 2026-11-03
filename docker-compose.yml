@@ -9,3 +9,11 @@ services:
     ports:
       - 3000:3000
       - 24678:24678
+  api:
+    build:
+      context: .
+      target: storage-api
+    volumes:
+      - ./server-data:/app/server-data
+    ports:
+      - 18790:18790
