@@ -1,17 +1,26 @@
 <script lang="ts">
   import { Button } from '$/components/ui/button';
+  import { env } from '$/util/env';
   import { cn } from '$lib/utils.js';
   import CloseIcon from '~icons/material-symbols/close-rounded';
 
   interface Props {
     show: boolean;
     input: string;
+    loading?: boolean;
     onClose: () => void;
     onHeightChange?: (height: number) => void;
     onTryFree: () => void;
   }
 
-  let { show, input = $bindable(), onClose, onHeightChange, onTryFree }: Props = $props();
+  let {
+    show,
+    input = $bindable(),
+    loading = false,
+    onClose,
+    onHeightChange,
+    onTryFree
+  }: Props = $props();
 
   let textarea = $state<HTMLTextAreaElement>();
   let container = $state<HTMLDivElement>();
@@ -53,13 +62,19 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
-    if (show && e.key === 'Escape') {
+    if (show && !loading && e.key === 'Escape') {
       onClose();
     }
   }
 
   function handleOutsideClick(e: MouseEvent) {
-    if (show && container && e.target instanceof Node && !container.contains(e.target)) {
+    if (
+      show &&
+      !loading &&
+      container &&
+      e.target instanceof Node &&
+      !container.contains(e.target)
+    ) {
       onClose();
     }
   }
@@ -84,7 +99,7 @@
         onkeydown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            if (input.trim()) {
+            if (input.trim() && !loading) {
               onTryFree();
             }
           }
@@ -99,12 +114,18 @@
     </div>
 
     <div class="flex items-center justify-between">
-      <span class="font-recursive text-xs font-normal text-foreground dark:text-foreground"
-        >Sign Up at Mermaid.ai to try AI</span>
+      {#if env.aiEnabled}
+        <span class="font-recursive text-xs font-normal text-foreground dark:text-foreground"
+          >Powered by {env.aiModel || 'AI'}</span>
+      {:else}
+        <span class="font-recursive text-xs font-normal text-foreground dark:text-foreground"
+          >Sign Up at Mermaid.ai to try AI</span>
+      {/if}
       <Button
         class="font-recursive h-6 w-16 gap-1.5 rounded-sm bg-accent p-1 text-xs font-medium text-white no-underline hover:bg-accent/90 hover:text-white hover:no-underline active:bg-accent/80 dark:bg-accent dark:text-white! dark:hover:bg-accent/90 dark:active:bg-accent/80"
+        disabled={loading}
         onclick={onTryFree}>
-        Try free
+        {loading ? 'Generating…' : env.aiEnabled ? 'Generate' : 'Try free'}
       </Button>
     </div>
   </div>
