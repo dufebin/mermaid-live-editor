@@ -51,7 +51,12 @@ export default defineConfig(({ mode }) => {
       devtoolsJson()
     ],
     envPrefix: 'MERMAID_',
-    server: { host: true, port: 3000, proxy: { ...(aiProxy ?? {}), ...apiProxy } },
+    server: {
+      host: true,
+      port: 3000,
+      proxy: { ...(aiProxy ?? {}), ...apiProxy },
+      watch: { ignored: ['**/server-data/**'] }
+    },
     preview: { host: true, port: 3000, proxy: { ...(aiProxy ?? {}), ...apiProxy } },
     // Vitest otherwise resolves Svelte's server build, where $effect is a no-op.
     resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
