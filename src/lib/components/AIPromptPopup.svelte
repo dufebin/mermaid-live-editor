@@ -108,7 +108,11 @@
         rows="1"
         class="focus font-recursive min-h-0 flex-1 resize-none border-none bg-transparent px-1 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:ring-0 focus:outline-none disabled:opacity-50 dark:text-foreground dark:placeholder:text-muted-foreground"
         style="height: 20px; overflow-y: hidden;"></textarea>
-      <button onclick={onClose} class="text-muted-foreground hover:text-foreground">
+      <button
+        onclick={() => {
+          if (!loading) onClose();
+        }}
+        class="text-muted-foreground hover:text-foreground">
         <CloseIcon class="size-4" />
       </button>
     </div>
