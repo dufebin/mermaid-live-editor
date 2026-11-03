@@ -1,5 +1,6 @@
 docs/**
 .svelte-kit/**
+.superpowers/**
 static/**
 build/**
 node_modules/**
