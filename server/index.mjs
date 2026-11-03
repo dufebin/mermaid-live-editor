@@ -16,7 +16,7 @@ import {
 } from './db.mjs';
 
 const HOST = process.env.HOST ?? '127.0.0.1';
-const PORT = Number(process.env.PORT ?? 18781);
+const PORT = Number(process.env.PORT ?? 18790);
 
 const diagramJson = (row) =>
   row && {
