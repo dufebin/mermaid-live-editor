@@ -31,16 +31,21 @@ export const editDiagramWithAI = async (
       model: env.aiModel
     }),
     headers: { 'Content-Type': 'application/json' },
-    method: 'POST'
+    method: 'POST',
+    signal: AbortSignal.timeout(60_000)
   });
 
   if (!response.ok) {
-    throw new Error(`AI request failed (${response.status})`);
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`AI request failed (${response.status}): ${errorText.slice(0, 200)}`.trim());
   }
 
-  const data = (await response.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
+  let data: { choices?: { message?: { content?: string } }[] };
+  try {
+    data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  } catch {
+    throw new Error('AI returned an invalid (non-JSON) response');
+  }
   const content = data.choices?.[0]?.message?.content ?? '';
   if (!content.trim()) {
     throw new Error('AI returned an empty response');

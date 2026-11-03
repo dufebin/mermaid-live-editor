@@ -127,7 +127,7 @@
       {/if}
       <Button
         class="font-recursive h-6 w-16 gap-1.5 rounded-sm bg-accent p-1 text-xs font-medium text-white no-underline hover:bg-accent/90 hover:text-white hover:no-underline active:bg-accent/80 dark:bg-accent dark:text-white! dark:hover:bg-accent/90 dark:active:bg-accent/80"
-        disabled={loading}
+        disabled={loading || (env.aiEnabled && !input.trim())}
         onclick={onTryFree}>
         {loading ? 'Generating…' : env.aiEnabled ? 'Generate' : 'Try free'}
       </Button>

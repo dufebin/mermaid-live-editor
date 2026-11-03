@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseAIContent } from './ai';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { editDiagramWithAI, parseAIContent } from './ai';
 
 describe('parseAIContent', () => {
   it('returns plain content unchanged, trimmed', () => {
@@ -23,5 +23,43 @@ describe('parseAIContent', () => {
   it('keeps content when a fence does not span the whole string', () => {
     const raw = 'Here is the diagram:\n```mermaid\nflowchart TD\n```';
     expect(parseAIContent(raw)).toBe(raw.trim());
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('editDiagramWithAI error handling', () => {
+  it('throws with status and body excerpt on non-200', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('{"error":"bad key"}', { status: 401 }))
+    );
+    await expect(editDiagramWithAI('test', 'flowchart TD')).rejects.toThrow(
+      'AI request failed (401): {"error":"bad key"}'
+    );
+  });
+
+  it('throws on non-JSON success response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<html>oops</html>', { status: 200 }))
+    );
+    await expect(editDiagramWithAI('test', 'flowchart TD')).rejects.toThrow(
+      'invalid (non-JSON) response'
+    );
+  });
+
+  it('throws on empty content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: '  ' } }] }), {
+          status: 200
+        })
+      )
+    );
+    await expect(editDiagramWithAI('test', 'flowchart TD')).rejects.toThrow('empty response');
   });
 });
