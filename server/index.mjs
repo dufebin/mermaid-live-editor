@@ -11,6 +11,8 @@ import {
   listAllDiagrams,
   listDiagrams,
   listFolders,
+  positionsToRow,
+  rowToPositions,
   updateDiagram,
   updateFolder
 } from './db.mjs';
@@ -25,6 +27,7 @@ const diagramJson = (row) =>
     folderId: row.folder_id,
     id: row.id,
     name: row.name,
+    positions: rowToPositions(row.positions),
     state: row.state,
     updatedAt: row.updated_at
   };
@@ -75,6 +78,19 @@ const readBody = (req) =>
 
 const isName = (value) => typeof value === 'string' && value.trim().length > 0;
 const isState = (value) => typeof value === 'string' && value.trim().length > 0;
+
+const isPositions = (value) =>
+  value != null &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.values(value).every(
+    (offset) =>
+      offset != null &&
+      typeof offset === 'object' &&
+      !Array.isArray(offset) &&
+      Number.isFinite(offset.dx) &&
+      Number.isFinite(offset.dy)
+  );
 
 const routes = [
   {
@@ -160,6 +176,9 @@ const routes = [
       if (!isState(body.state)) {
         return bad(res, 400, 'state is required');
       }
+      if (body.positions != null && !isPositions(body.positions)) {
+        return bad(res, 400, 'positions must be an object of {dx, dy} number pairs');
+      }
       if (body.folderId != null && !getFolder(body.folderId)) {
         return bad(res, 404, 'folder not found');
       }
@@ -170,6 +189,7 @@ const routes = [
           createDiagram({
             folderId: body.folderId ?? null,
             name: body.name.trim(),
+            positions: body.positions,
             state: body.state
           })
         )
@@ -199,6 +219,9 @@ const routes = [
       if (body.state != null && !isState(body.state)) {
         return bad(res, 400, 'state must be a non-empty string');
       }
+      if (body.positions != null && !isPositions(body.positions)) {
+        return bad(res, 400, 'positions must be an object of {dx, dy} number pairs');
+      }
       if (body.folderId != null && !getFolder(body.folderId)) {
         return bad(res, 404, 'folder not found');
       }
@@ -210,6 +233,7 @@ const routes = [
             favorite: typeof body.favorite === 'boolean' ? Number(body.favorite) : undefined,
             folderId: body.folderId,
             name: body.name != null ? body.name.trim() : undefined,
+            positions: body.positions === undefined ? undefined : positionsToRow(body.positions),
             state: body.state
           })
         )

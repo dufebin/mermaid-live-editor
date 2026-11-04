@@ -26,12 +26,36 @@ db.exec(`
     name TEXT NOT NULL,
     state TEXT NOT NULL,
     favorite INTEGER NOT NULL DEFAULT 0,
+    positions TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_diagrams_folder ON diagrams(folder_id);
   CREATE INDEX IF NOT EXISTS idx_diagrams_favorite ON diagrams(favorite);
 `);
+
+// Idempotent migration for databases created before the positions column existed.
+try {
+  db.exec('ALTER TABLE diagrams ADD COLUMN positions TEXT');
+} catch {
+  // Column already exists — ignore.
+}
+
+// Object of node offsets -> JSON string for storage; null/undefined -> null.
+export const positionsToRow = (positions) => (positions == null ? null : JSON.stringify(positions));
+
+// Stored JSON string -> object of node offsets; NULL or corrupted JSON -> {}.
+export const rowToPositions = (value) => {
+  if (value == null) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
 export const listFolders = () => db.prepare('SELECT * FROM folders ORDER BY name').all();
 
@@ -103,27 +127,28 @@ export const listDiagrams = ({ favorite, folderId, search } = {}) => {
 
 export const getDiagram = (id) => db.prepare('SELECT * FROM diagrams WHERE id = ?').get(id) ?? null;
 
-export const createDiagram = ({ folderId = null, name, state }) => {
+export const createDiagram = ({ folderId = null, name, state, positions = null }) => {
   const id = randomUUID();
   const ts = now();
   db.prepare(
-    'INSERT INTO diagrams (id, folder_id, name, state, favorite, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)'
-  ).run(id, folderId, name, state, ts, ts);
+    'INSERT INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
+  ).run(id, folderId, name, state, positionsToRow(positions), ts, ts);
   return getDiagram(id);
 };
 
-export const updateDiagram = (id, { favorite, folderId, name, state }) => {
+export const updateDiagram = (id, { favorite, folderId, name, state, positions }) => {
   const diagram = getDiagram(id);
   if (!diagram) {
     return null;
   }
   db.prepare(
-    'UPDATE diagrams SET name = ?, folder_id = ?, state = ?, favorite = ?, updated_at = ? WHERE id = ?'
+    'UPDATE diagrams SET name = ?, folder_id = ?, state = ?, favorite = ?, positions = ?, updated_at = ? WHERE id = ?'
   ).run(
     name ?? diagram.name,
     folderId === undefined ? diagram.folder_id : folderId,
     state ?? diagram.state,
     favorite === undefined ? diagram.favorite : favorite,
+    positions === undefined ? diagram.positions : positions,
     now(),
     id
   );
@@ -163,7 +188,7 @@ export const importAll = (payload) => {
       }
     }
     const insertDiagram = db.prepare(
-      'INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
     for (const diagram of payload.diagrams ?? []) {
       if (!isNonEmpty(diagram?.id) || !isNonEmpty(diagram?.name) || !isNonEmpty(diagram?.state)) {
@@ -176,6 +201,7 @@ export const importAll = (payload) => {
         diagram.name,
         diagram.state,
         diagram.favorite ? 1 : 0,
+        diagram.positions ? JSON.stringify(diagram.positions) : null,
         diagram.createdAt ?? now(),
         diagram.updatedAt ?? now()
       );

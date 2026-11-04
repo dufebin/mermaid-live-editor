@@ -6,12 +6,18 @@ export interface Folder {
   updatedAt: string;
 }
 
+export interface NodeOffset {
+  dx: number;
+  dy: number;
+}
+
 export interface Diagram {
   createdAt: string;
   favorite: boolean;
   folderId: string | null;
   id: string;
   name: string;
+  positions: Record<string, NodeOffset>;
   state: string;
   updatedAt: string;
 }
@@ -68,6 +74,7 @@ export const listDiagrams = (
 export const createDiagram = (data: {
   folderId?: string | null;
   name: string;
+  positions?: Record<string, NodeOffset>;
   state: string;
 }): Promise<Diagram> =>
   request<Diagram>('/diagrams', { body: JSON.stringify(data), method: 'POST' });
@@ -76,7 +83,13 @@ export const getDiagram = (id: string): Promise<Diagram> => request<Diagram>(`/d
 
 export const updateDiagram = (
   id: string,
-  patch: { favorite?: boolean; folderId?: string | null; name?: string; state?: string }
+  patch: {
+    favorite?: boolean;
+    folderId?: string | null;
+    name?: string;
+    positions?: Record<string, NodeOffset>;
+    state?: string;
+  }
 ): Promise<Diagram> =>
   request<Diagram>(`/diagrams/${id}`, { body: JSON.stringify(patch), method: 'PATCH' });
 
