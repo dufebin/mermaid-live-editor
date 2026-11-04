@@ -74,3 +74,30 @@ describe('replaceNodeLabel', () => {
     expect(replaceNodeLabel('graph TD\n  A --> B', 'A', 'New')).toBeNull();
   });
 });
+
+describe('replaceNodeLabel with diagramType gating', () => {
+  it('does not touch unspaced flowchart links when diagramType is given', () => {
+    expect(replaceNodeLabel('flowchart TD\n  A-->B\n  A-->C', 'A', 'New', 'flowchart')).toBeNull();
+  });
+
+  it('replaces bare sequence actors when diagramType is sequence', () => {
+    expect(replaceNodeLabel('sequenceDiagram\n  Old->>B: hi', 'Old', 'New', 'sequence')).toBe(
+      'sequenceDiagram\n  New->>B: hi'
+    );
+  });
+
+  it('replaces participant aliases when diagramType is sequence', () => {
+    expect(
+      replaceNodeLabel('sequenceDiagram\n  participant A as Old', 'A', 'New', 'sequence')
+    ).toBe('sequenceDiagram\n  participant A as New');
+  });
+
+  it('escapes double quotes in the payload', () => {
+    expect(replaceNodeLabel('A[Old] --> B', 'A', 'say "hi"')).toBe('A[say #quot;hi#quot;] --> B');
+  });
+
+  it('returns null when the payload would break the syntax', () => {
+    expect(replaceNodeLabel('A[Old] --> B', 'A', 'bad]label')).toBeNull();
+    expect(replaceNodeLabel('A[Old] --> B', 'A', 'line\nbreak')).toBeNull();
+  });
+});
