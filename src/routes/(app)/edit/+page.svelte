@@ -222,6 +222,10 @@
 <svelte:window
   onkeydown={(event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      if (event.repeat) {
+        event.preventDefault();
+        return;
+      }
       event.preventDefault();
       onSave();
     }
