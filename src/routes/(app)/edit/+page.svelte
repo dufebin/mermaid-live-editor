@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AIEditBar from '$/components/AIEditBar.svelte';
   import Actions from '$/components/Actions.svelte';
   import Card from '$/components/Card/Card.svelte';
   import SaveDialog from '$/components/Dashboard/SaveDialog.svelte';
@@ -203,8 +204,13 @@
           <div class="absolute top-0 right-0">
             <PanZoomToolbar {panZoomState} fullScreenHref={urls.current.view} />
           </div>
-          <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
-          <div class="absolute bottom-0 left-0 sm:left-5"><SyncRoughToolbar /></div>
+          <div class="flex items-center justify-between gap-2 p-2">
+            <SyncRoughToolbar />
+            {#if env.aiEnabled}
+              <AIEditBar />
+            {/if}
+            <VersionSecurityToolbar />
+          </div>
         </Resizable.Pane>
         {#if isHistoryOpen}
           <Resizable.Handle class="ml-1 hidden opacity-0 sm:block" />

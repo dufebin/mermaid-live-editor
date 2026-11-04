@@ -29,11 +29,11 @@
       const newCode = await editDiagramWithAI(instruction, validatedState.current.code);
       updateCode(newCode);
       input = '';
-      textarea?.focus();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI request failed');
     } finally {
       isLoading = false;
+      textarea?.focus();
     }
   };
 </script>
