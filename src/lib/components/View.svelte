@@ -86,6 +86,15 @@
     if (actorName) {
       return actorName;
     }
+    if (diagramType) {
+      // The detector reports versioned types (e.g. flowchart-v2) while rendered
+      // node ids use the unversioned name (flowchart) — try both prefixes.
+      const stripped = diagramType.replace(/-v\d+$/, '');
+      return (
+        parseNodeId(element.id, viewId, diagramType) ??
+        (stripped !== diagramType ? parseNodeId(element.id, viewId, stripped) : null)
+      );
+    }
     return parseNodeId(element.id, viewId, diagramType ?? '');
   };
 
