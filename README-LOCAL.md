@@ -1,0 +1,75 @@
+# 本地运行手册（mermaid-live-editor 定制版）
+
+本仓库在开源版基础上做了本地化定制：AI 图表编辑（本地 LLM 网关）、图表存储 + Dashboard（SQLite）、可视化编辑（选中/拖拽/改标签）。本文只讲怎么跑起来。
+
+## 架构（3 个端口）
+
+| 服务       | 端口                      | 进程                                   | 说明                                                          |
+| ---------- | ------------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| 前端编辑器 | **http://localhost:3000** | `pnpm dev`（vite）                     | 主入口，`/edit` 编辑、`/dashboard` 管理                       |
+| 存储服务   | 127.0.0.1:18790           | `pnpm server`（node server/index.mjs） | 图表/文件夹/位置的 REST API，数据落 `server-data/diagrams.db` |
+| LLM 网关   | 127.0.0.1:18780           | （外部已有，勿动）                     | deepseek-v4.1-flash，前端经 vite `/ai` 代理访问               |
+
+前端通过 vite 代理访问另两个服务（`/api` → 18790、`/ai` → 18780），浏览器只需访问 3000 一个端口。
+
+## 启动
+
+### 一键启动（推荐）
+
+```bash
+cd /data/opensource/mermaid-live-editor
+pnpm dev:all        # 同时启动存储服务 + 前端
+```
+
+### 分开启动（两个终端）
+
+```bash
+pnpm server         # 终端 1：存储服务（先启动）
+pnpm dev            # 终端 2：前端（首次含 embed 构建，约几分钟）
+```
+
+> 依赖变化后才需要 `pnpm install`；日常启动不需要。
+
+## 重启
+
+### 重启存储服务（数据不丢）
+
+```bash
+# 找到并停掉旧进程
+pkill -f "node server/index.mjs"
+# 重新启动（后台常驻）
+pnpm server &       # 或 nohup pnpm server > /tmp/mermaid-storage.log 2>&1 &
+```
+
+SQLite 文件持久 + 迁移幂等，重启/升级代码后数据（图表、文件夹、节点位置）完整保留。
+
+### 重启前端
+
+```bash
+# dev:all / pnpm dev 的终端里 Ctrl+C，然后
+pnpm dev
+```
+
+**必须重启前端的情况**：改了 `vite.config.js`、`.env` 或 `.env.local`（vite 代理与 env 注入在启动时读取；注意本栈中 `.env` 冲突键优先于 `.env.local`——改默认值直接改 `.env`）。
+
+改 `src/` 下的代码**不用重启**（自动整页刷新）。
+
+## 配置
+
+| 文件         | 内容                                                                      | 是否入库      |
+| ------------ | ------------------------------------------------------------------------- | ------------- |
+| `.env`       | 默认配置；`MERMAID_IS_ENABLED_MERMAID_CHART_LINKS='false'` 已关商业 UI    | ✅ 入库       |
+| `.env.local` | AI 网关地址与密钥（`AI_PROXY_TARGET`/`AI_PROXY_KEY`）、`MERMAID_AI_MODEL` | ❌ gitignored |
+
+## 常见问题
+
+- **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
+- **存储服务起不来**：看日志 `/tmp/mermaid-storage.log`（若用 nohup 启动）
+- **AI 编辑无响应**：先确认网关活着 `curl http://127.0.0.1:18780/v1/models -H "Authorization: Bearer <key>"`，再确认存储/前端代理正常 `curl http://localhost:3000/api/folders`
+- **备份图表**：拷走 `server-data/diagrams.db` 即可；或在 Dashboard 里用 Export 导出 JSON
+
+## 快捷键与功能速查
+
+- `Ctrl+S` / `⌘S`：保存（未保存弹命名框，可选文件夹；已保存直接更新）
+- 点击图中节点：选中高亮 + 代码定位 + AI 上下文；双击改标签；拖拽移动（位置随保存持久化）
+- 图下方 AI 输入条：自然语言改图；选中节点后自动附上下文
