@@ -3,6 +3,7 @@
   import { TID } from '$/constants';
   import { editDiagramWithAI } from '$/util/ai';
   import { notify } from '$/util/notify';
+  import { clearSelectedNode, selectedNode } from '$/util/selectedNode.svelte';
   import { updateCode, validatedState } from '$/util/state.svelte';
   import { tick } from 'svelte';
   import SendIcon from '~icons/material-symbols/send-rounded';
@@ -27,9 +28,14 @@
     }
     isLoading = true;
     try {
-      const newCode = await editDiagramWithAI(instruction, validatedState.current.code);
+      const selection = selectedNode.current;
+      const instructionWithContext = selection
+        ? `${instruction}\n\nFocus on node ${selection.name}, currently: ${selection.lineText}`
+        : instruction;
+      const newCode = await editDiagramWithAI(instructionWithContext, validatedState.current.code);
       updateCode(newCode);
       input = '';
+      clearSelectedNode();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI request failed');
     } finally {
@@ -66,6 +72,14 @@
         void submit();
       }
     }} />
+  {#if selectedNode.current}
+    <button
+      class="flex shrink-0 items-center gap-1 rounded-full border border-accent px-2 py-0.5 text-xs text-accent"
+      title="Clear node reference"
+      onclick={clearSelectedNode}>
+      ⊙ {selectedNode.current.name} ×
+    </button>
+  {/if}
   <Button
     variant="accent"
     size="sm"

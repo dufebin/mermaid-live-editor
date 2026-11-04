@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { EditorProps } from '$/types';
   import { aiEnabled, editDiagramWithAI } from '$/util/ai';
+  import { findDefinitionLine } from '$/util/diagramNodes';
   import { env } from '$/util/env';
   import { notify } from '$/util/notify';
+  import { selectedNode } from '$/util/selectedNode.svelte';
   import { urls, validatedState } from '$/util/state.svelte';
   import { logMermaidChartClick } from '$/util/stats';
   import { AIPromptViewZoneManager } from '$lib/util/AIPromptViewZoneManager';
@@ -232,6 +234,20 @@
 
     // Display/clear errors
     monaco.editor.setModelMarkers(model, 'mermaid', errorMarkers);
+  });
+
+  $effect(() => {
+    const selection = selectedNode.current;
+    if (!selection || !editor) {
+      return;
+    }
+    const lineNumber = findDefinitionLine(currentText, selection.name);
+    if (!lineNumber) {
+      return;
+    }
+    const maxColumn = editor.getModel()?.getLineMaxColumn(lineNumber) ?? 1;
+    editor.revealLineInCenter(lineNumber);
+    editor.setSelection(new monaco.Range(lineNumber, 1, lineNumber, maxColumn));
   });
 </script>
 
