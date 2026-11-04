@@ -80,6 +80,14 @@
 
   let saveDialogOpen = $state(false);
 
+  const onSave = () => {
+    if (currentDiagram.diagram) {
+      void saveExisting();
+    } else {
+      saveDialogOpen = true;
+    }
+  };
+
   const saveExisting = async () => {
     const existing = currentDiagram.diagram;
     if (!existing) {
@@ -128,19 +136,7 @@
       <HistoryIcon />
     </Toggle>
     <Share />
-    <Button
-      variant="accent"
-      size="sm"
-      data-testid={TID.saveButton}
-      onclick={() => {
-        if (currentDiagram.diagram) {
-          void saveExisting();
-        } else {
-          saveDialogOpen = true;
-        }
-      }}>
-      Save
-    </Button>
+    <Button variant="accent" size="sm" data-testid={TID.saveButton} onclick={onSave}>Save</Button>
     {#if env.isEnabledMermaidChartLinks}
       <Separator orientation="vertical" />
       <McWrapper labelPrefix="Opens ">
@@ -222,6 +218,14 @@
     </div>
   </div>
 </div>
+
+<svelte:window
+  onkeydown={(event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      onSave();
+    }
+  }} />
 
 <EditorChooserModal bind:open={showEditorChooser} />
 <SaveDialog bind:open={saveDialogOpen} onOpenChange={(open) => (saveDialogOpen = open)} />

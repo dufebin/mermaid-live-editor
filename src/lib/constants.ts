@@ -28,6 +28,7 @@ export const TID = {
   newDiagramButton: 'new-diagram-button',
   nodeLabelInput: 'node-label-input',
   saveButton: 'save-button',
+  saveDialogFolderSelect: 'save-dialog-folder-select',
   saveDialogInput: 'save-dialog-input',
   searchInput: 'search-input',
   themeToggleButton: 'theme-toggle-button'
