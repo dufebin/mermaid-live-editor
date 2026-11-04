@@ -138,7 +138,9 @@
   // `transform` presentation attribute; an inline `transform` would override
   // the attribute and teleport the node near the SVG origin.
   const setElementOffset = (element: SVGElement, dx: number, dy: number) => {
-    element.style.setProperty('translate', `${dx}px, ${dy}px`);
+    // The CSS `translate` property takes space-separated values (commas belong
+    // to the `transform` function syntax and are rejected by the CSSOM).
+    element.style.setProperty('translate', `${dx}px ${dy}px`);
   };
 
   // Apply saved offsets to freshly rendered nodes.
