@@ -1,6 +1,9 @@
 import type { State } from './types';
 
 export const TID = {
+  aiEditBar: 'ai-edit-bar',
+  aiEditInput: 'ai-edit-input',
+  aiEditSend: 'ai-edit-send',
   aiHelpText: 'ai-help-text',
   aiRepairButton: 'ai-repair-button',
   copyMarkdown: 'copy-markdown',
