@@ -24,10 +24,14 @@
   import { mode } from 'mode-watcher';
   import { onMount } from 'svelte';
 
+  // `editable` gates the node interaction layer (select/drag/label-edit).
+  // The read-only /view page mounts this component too and must never write
+  // code, positions, or selection state.
   let {
+    editable = false,
     panZoomState = new PanZoomState(),
     shouldShowGrid = true
-  }: { panZoomState?: PanZoomState; shouldShowGrid?: boolean } = $props();
+  }: { editable?: boolean; panZoomState?: PanZoomState; shouldShowGrid?: boolean } = $props();
   let code = '';
   let config = '';
   let container: HTMLDivElement | undefined = $state();
@@ -167,6 +171,11 @@
     | undefined;
 
   const onContainerMouseDown = (event: MouseEvent) => {
+    // Only the primary button selects/drags; right/middle clicks must not
+    // arm dragState or steal the selection.
+    if (event.button !== 0) {
+      return;
+    }
     const name = findNodeName(event.target);
     if (!name) {
       clearSelectedNode();
@@ -359,10 +368,21 @@
     setupPanZoomObserver();
   });
 
-  // Reload saved node offsets when the active diagram changes.
+  // Reload saved node offsets when the active diagram changes. A different
+  // diagram invalidates the current selection — its node names are stale.
   $effect(() => {
     const diagram = currentDiagram.diagram;
     resetNodePositions(sanitizePositions(diagram?.positions));
+    clearSelectedNode();
+    highlight(undefined);
+  });
+
+  // Clearing the selection from the chip or Monaco must also drop the SVG
+  // highlight so all three stay in sync (unless a label edit is in flight).
+  $effect(() => {
+    if (!selectedNode.current && !editingLabel) {
+      highlight(undefined);
+    }
   });
 
   // Queue state changes to avoid race condition
@@ -389,11 +409,11 @@
     id="container"
     bind:this={container}
     class="h-full overflow-auto"
-    ondblclick={onContainerDblClick}
-    onmousedown={onContainerMouseDown}
-    onmousemove={onContainerMouseMove}
-    onmouseup={onContainerMouseUp}
-    onmouseleave={onContainerMouseUp}>
+    ondblclick={editable ? onContainerDblClick : undefined}
+    onmousedown={editable ? onContainerMouseDown : undefined}
+    onmousemove={editable ? onContainerMouseMove : undefined}
+    onmouseup={editable ? onContainerMouseUp : undefined}
+    onmouseleave={editable ? onContainerMouseUp : undefined}>
   </div>
   {#if editingLabel}
     <input
