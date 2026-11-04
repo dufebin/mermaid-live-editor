@@ -48,9 +48,14 @@
 
   // Set up panZoom state observer to update the store when pan/zoom changes
   const setupPanZoomObserver = () => {
-    panZoomState.onPanZoomChange = (pan, zoom) => {
-      setZoom(zoom ?? 1);
-      updateCodeStore({ pan, zoom });
+    panZoomState.onPanZoomChange = (pan, zoomValue) => {
+      // A failed panzoom init (non-invertible SVGMatrix) fires callbacks with a
+      // NaN zoom: skip both the zoom sync and the state write — `??` would not
+      // catch it and NaN would leak into localStorage and the URL hash.
+      if (zoomValue != null && Number.isFinite(zoomValue)) {
+        setZoom(zoomValue);
+        updateCodeStore({ pan, zoom: zoomValue });
+      }
     };
   };
 
@@ -191,8 +196,10 @@
     if (!dragState) {
       return;
     }
-    const dx = dragState.baseDx + (event.clientX - dragState.startX) / nodePositions.zoom;
-    const dy = dragState.baseDy + (event.clientY - dragState.startY) / nodePositions.zoom;
+    // Defensive fallback in case a stale NaN zoom survived another path.
+    const zoom = Number.isFinite(nodePositions.zoom) ? nodePositions.zoom : 1;
+    const dx = dragState.baseDx + (event.clientX - dragState.startX) / zoom;
+    const dy = dragState.baseDy + (event.clientY - dragState.startY) / zoom;
     if (dx === dragState.baseDx && dy === dragState.baseDy) {
       return;
     }
