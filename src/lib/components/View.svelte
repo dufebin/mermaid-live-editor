@@ -370,11 +370,13 @@
 
   // Reload saved node offsets when the active diagram changes. A different
   // diagram invalidates the current selection — its node names are stale.
+  // (Visual un-highlighting happens via the chip-clear effect below; calling
+  // highlight() here would make selectedSvg a dependency of this effect and
+  // re-clear the selection on every highlight change.)
   $effect(() => {
     const diagram = currentDiagram.diagram;
     resetNodePositions(sanitizePositions(diagram?.positions));
     clearSelectedNode();
-    highlight(undefined);
   });
 
   // Clearing the selection from the chip or Monaco must also drop the SVG
