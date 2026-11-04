@@ -11,6 +11,7 @@ export class PanZoomState {
   private isDirty = false;
   private resizeObserver: ResizeObserver;
 
+  public isNodeDragging = false;
   public isPanEnabled: boolean;
   public onPanZoomChange?: (pan: Point, zoom: number) => void;
 
@@ -28,6 +29,7 @@ export class PanZoomState {
     this.pzoom?.destroy();
     let hammer: HammerManager | undefined;
     this.pzoom = panzoom(diagramView, {
+      beforePan: () => !this.isNodeDragging,
       center: true,
       controlIconsEnabled: false,
       customEventsHandler: {

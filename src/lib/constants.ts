@@ -26,6 +26,7 @@ export const TID = {
   exportButton: 'export-button',
   importInput: 'import-input',
   newDiagramButton: 'new-diagram-button',
+  nodeLabelInput: 'node-label-input',
   saveButton: 'save-button',
   saveDialogInput: 'save-dialog-input',
   searchInput: 'search-input',

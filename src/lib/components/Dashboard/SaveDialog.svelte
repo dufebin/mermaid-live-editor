@@ -6,6 +6,7 @@
   import { createDiagram } from '$/util/api';
   import { setCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { notify } from '$/util/notify';
+  import { nodePositions } from '$/util/nodePositions.svelte';
   import { validatedState } from '$/util/state.svelte';
 
   interface Props {
@@ -36,6 +37,7 @@
     try {
       const diagram = await createDiagram({
         name: trimmed,
+        positions: nodePositions.value,
         state: validatedState.current.serialized
       });
       setCurrentDiagram(diagram);

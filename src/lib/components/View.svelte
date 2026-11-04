@@ -1,10 +1,23 @@
 <script lang="ts">
+  import type { NodeOffset } from '$/util/nodePositions.svelte';
   import type { State, ValidatedState } from '$/types';
+  import { updateDiagram } from '$/util/api';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
+  import { findDefinitionLine, parseNodeId, replaceNodeLabel } from '$/util/diagramNodes';
+  import { currentDiagram } from '$/util/currentDiagram.svelte';
+  import { notify } from '$/util/notify';
+  import {
+    nodePositions,
+    resetNodePositions,
+    setNodePosition,
+    setZoom
+  } from '$/util/nodePositions.svelte';
   import { PanZoomState } from '$/util/panZoom';
   import { renderAndPlaceDiagram } from '$/util/renderView';
-  import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
+  import { clearSelectedNode, setSelectedNode } from '$/util/selectedNode.svelte';
+  import { TID } from '$/constants';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
   import type { MermaidConfig } from 'mermaid';
@@ -25,9 +38,18 @@
   let manualUpdate = true;
   let waitForFontAwesomeToLoad: FontAwesome['waitForFontAwesomeToLoad'] | undefined = $state();
 
+  const NODE_SELECTOR = '.node, .actor';
+  const viewId = uniqueID('graph-');
+  let diagramType: string | undefined;
+  let selectedSvg: SVGElement | undefined = $state();
+  let editingLabel:
+    | { height: number; left: number; name: string; top: number; value: string; width: number }
+    | undefined = $state();
+
   // Set up panZoom state observer to update the store when pan/zoom changes
   const setupPanZoomObserver = () => {
     panZoomState.onPanZoomChange = (pan, zoom) => {
+      setZoom(zoom ?? 1);
       updateCodeStore({ pan, zoom });
     };
   };
@@ -40,6 +62,179 @@
     }
   };
 
+  const isNodeOffset = (value: unknown): value is NodeOffset =>
+    typeof value === 'object' &&
+    value !== null &&
+    Number.isFinite((value as NodeOffset).dx) &&
+    Number.isFinite((value as NodeOffset).dy);
+
+  // Persisted positions come from the API payload: keep only well-formed offsets.
+  const sanitizePositions = (
+    raw: Record<string, NodeOffset> | undefined
+  ): Record<string, NodeOffset> => {
+    const clean: Record<string, NodeOffset> = {};
+    for (const [name, offset] of Object.entries(raw ?? {})) {
+      if (isNodeOffset(offset)) {
+        clean[name] = { dx: offset.dx, dy: offset.dy };
+      }
+    }
+    return clean;
+  };
+
+  const findNodeNameFromElement = (element: Element): string | null => {
+    const actorName = element.getAttribute('name');
+    if (actorName) {
+      return actorName;
+    }
+    return parseNodeId(element.id, viewId, diagramType ?? '');
+  };
+
+  const findNodeName = (target: EventTarget | null): string | null => {
+    if (!(target instanceof Element)) {
+      return null;
+    }
+    const element = target.closest(NODE_SELECTOR);
+    if (!element) {
+      return null;
+    }
+    return findNodeNameFromElement(element);
+  };
+
+  const findNodeElement = (name: string): SVGElement | null => {
+    for (const element of container?.querySelectorAll<SVGElement>(NODE_SELECTOR) ?? []) {
+      if (findNodeNameFromElement(element) === name) {
+        return element;
+      }
+    }
+    return null;
+  };
+
+  const highlight = (element: SVGElement | undefined) => {
+    selectedSvg?.classList.remove('visual-selected');
+    element?.classList.add('visual-selected');
+    selectedSvg = element;
+  };
+
+  // Apply saved offsets to freshly rendered nodes.
+  const applyPositions = () => {
+    for (const [name, offset] of Object.entries(nodePositions.value)) {
+      if (!isNodeOffset(offset)) {
+        continue;
+      }
+      const element = findNodeElement(name);
+      element?.style.setProperty('transform', `translate(${offset.dx}px, ${offset.dy}px)`);
+    }
+  };
+
+  let dragState:
+    { baseDx: number; baseDy: number; name: string; startX: number; startY: number } | undefined;
+
+  const onContainerMouseDown = (event: MouseEvent) => {
+    const name = findNodeName(event.target);
+    if (!name) {
+      clearSelectedNode();
+      highlight(undefined);
+      return;
+    }
+    const element = (event.target as Element).closest(NODE_SELECTOR);
+    if (!(element instanceof SVGElement)) {
+      return;
+    }
+    const line = findDefinitionLine(code, name);
+    setSelectedNode({
+      lineText: (code.split('\n')[Math.max((line ?? 1) - 1, 0)] ?? '').trim(),
+      name
+    });
+    highlight(element);
+    const base = nodePositions.value[name] ?? { dx: 0, dy: 0 };
+    dragState = {
+      baseDx: base.dx,
+      baseDy: base.dy,
+      name,
+      startX: event.clientX,
+      startY: event.clientY
+    };
+  };
+
+  const onContainerMouseMove = (event: MouseEvent) => {
+    if (!dragState) {
+      return;
+    }
+    panZoomState.isNodeDragging = true;
+    const dx = dragState.baseDx + (event.clientX - dragState.startX) / nodePositions.zoom;
+    const dy = dragState.baseDy + (event.clientY - dragState.startY) / nodePositions.zoom;
+    findNodeElement(dragState.name)?.style.setProperty('transform', `translate(${dx}px, ${dy}px)`);
+    setNodePosition(dragState.name, dx, dy);
+  };
+
+  const onContainerMouseUp = () => {
+    if (!dragState) {
+      return;
+    }
+    const { name } = dragState;
+    dragState = undefined;
+    panZoomState.isNodeDragging = false;
+    persistPositions(name);
+  };
+
+  const persistPositions = (changedName: string) => {
+    const diagram = currentDiagram.diagram;
+    if (!diagram) {
+      return; // unsaved diagram: positions stay in memory only
+    }
+    void updateDiagram(diagram.id, { positions: nodePositions.value }).catch((error) => {
+      notify(error instanceof Error ? error.message : `Failed to save position of ${changedName}`);
+    });
+  };
+
+  const onContainerDblClick = (event: MouseEvent) => {
+    const name = findNodeName(event.target);
+    if (!name) {
+      return;
+    }
+    const element = (event.target as Element).closest(NODE_SELECTOR);
+    if (!(element instanceof SVGElement)) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const viewRect = view?.getBoundingClientRect();
+    if (!viewRect) {
+      return;
+    }
+    editingLabel = {
+      height: Math.max(rect.height, 28),
+      left: rect.left - viewRect.left,
+      name,
+      top: rect.top - viewRect.top,
+      value: element.textContent?.trim() ?? '',
+      width: Math.max(rect.width, 80)
+    };
+  };
+
+  const submitLabel = () => {
+    if (!editingLabel) {
+      return;
+    }
+    const { name, value } = editingLabel;
+    editingLabel = undefined;
+    const nextCode = replaceNodeLabel(code, name, value.trim(), diagramType);
+    if (nextCode === null) {
+      notify('Label editing not supported here, try the AI bar');
+      return;
+    }
+    updateCode(nextCode);
+  };
+
+  const onLabelKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitLabel();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      editingLabel = undefined;
+    }
+  };
+
   const handleStateChange = async (state: ValidatedState) => {
     const startTime = Date.now();
     if (state.error !== undefined) {
@@ -47,7 +242,6 @@
       return;
     }
     error = false;
-    let diagramType: string | undefined;
     try {
       if (container) {
         manualUpdate = true;
@@ -80,11 +274,14 @@
           config: JSON.parse(state.mermaid) as MermaidConfig,
           container,
           rough: state.rough,
-          viewId: uniqueID('graph-')
+          viewId
         });
         diagramType = detectedDiagramType;
         if (graphDiv && state.panZoom) {
           handlePanZoom(state, graphDiv);
+        }
+        if (graphDiv) {
+          applyPositions();
         }
         if (view?.parentElement && scroll) {
           view.parentElement.scrollTop = scroll;
@@ -108,6 +305,12 @@
     setupPanZoomObserver();
   });
 
+  // Reload saved node offsets when the active diagram changes.
+  $effect(() => {
+    const diagram = currentDiagram.diagram;
+    resetNodePositions(sanitizePositions(diagram?.positions));
+  });
+
   // Queue state changes to avoid race condition
   let pendingStateChange = Promise.resolve();
   $effect(() => {
@@ -122,9 +325,45 @@
 <div
   id="view"
   bind:this={view}
-  class={['h-full w-full', shouldShowGrid && `grid-bg-${mode.current}`, error && 'opacity-50']}>
-  <div id="container" bind:this={container} class="h-full overflow-auto"></div>
+  class={[
+    'relative h-full w-full',
+    shouldShowGrid && `grid-bg-${mode.current}`,
+    error && 'opacity-50'
+  ]}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    id="container"
+    bind:this={container}
+    class="h-full overflow-auto"
+    ondblclick={onContainerDblClick}
+    onmousedown={onContainerMouseDown}
+    onmousemove={onContainerMouseMove}
+    onmouseup={onContainerMouseUp}
+    onmouseleave={onContainerMouseUp}>
+  </div>
+  {#if editingLabel}
+    <input
+      bind:value={editingLabel.value}
+      class="absolute z-10 rounded-sm border-2 border-accent bg-background px-1 text-sm text-foreground shadow-lg focus:outline-none"
+      data-testid={TID.nodeLabelInput}
+      style="height: {editingLabel.height}px; left: {editingLabel.left}px; top: {editingLabel.top}px; width: {editingLabel.width}px"
+      onblur={submitLabel}
+      onkeydown={onLabelKeydown} />
+  {/if}
 </div>
+
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    if (editingLabel) {
+      editingLabel = undefined;
+      return;
+    }
+    clearSelectedNode();
+    highlight(undefined);
+  }} />
 
 <style>
   .grid-bg-light {
@@ -135,5 +374,9 @@
   .grid-bg-dark {
     background-size: 30px 30px;
     background-image: radial-gradient(circle, #46464646 2px, #0000 2px);
+  }
+
+  :global(.visual-selected) {
+    filter: drop-shadow(0 0 4px var(--color-accent, #7c3aed));
   }
 </style>
