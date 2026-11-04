@@ -16,7 +16,7 @@
   import { renderAndPlaceDiagram } from '$/util/renderView';
   import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
-  import { clearSelectedNode, setSelectedNode } from '$/util/selectedNode.svelte';
+  import { clearSelectedNode, selectedNode, setSelectedNode } from '$/util/selectedNode.svelte';
   import { TID } from '$/constants';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
@@ -100,13 +100,18 @@
     return findNodeNameFromElement(element);
   };
 
-  const findNodeElement = (name: string): SVGElement | null => {
+  // Sequence diagrams render two rects (actor-top/actor-bottom) with the same
+  // name per actor, so every element resolving to `name` must be moved. The
+  // actor-box text carries no name attribute and is not addressable: clicking
+  // it counts as empty space.
+  const findNodeElements = (name: string): SVGElement[] => {
+    const matches: SVGElement[] = [];
     for (const element of container?.querySelectorAll<SVGElement>(NODE_SELECTOR) ?? []) {
       if (findNodeNameFromElement(element) === name) {
-        return element;
+        matches.push(element);
       }
     }
-    return null;
+    return matches;
   };
 
   const highlight = (element: SVGElement | undefined) => {
@@ -115,19 +120,35 @@
     selectedSvg = element;
   };
 
+  // Offsets use the CSS `translate` property, which composes with mermaid's
+  // `transform` presentation attribute; an inline `transform` would override
+  // the attribute and teleport the node near the SVG origin.
+  const setElementOffset = (element: SVGElement, dx: number, dy: number) => {
+    element.style.setProperty('translate', `${dx}px, ${dy}px`);
+  };
+
   // Apply saved offsets to freshly rendered nodes.
   const applyPositions = () => {
     for (const [name, offset] of Object.entries(nodePositions.value)) {
       if (!isNodeOffset(offset)) {
         continue;
       }
-      const element = findNodeElement(name);
-      element?.style.setProperty('transform', `translate(${offset.dx}px, ${offset.dy}px)`);
+      for (const element of findNodeElements(name)) {
+        setElementOffset(element, offset.dx, offset.dy);
+      }
     }
   };
 
   let dragState:
-    { baseDx: number; baseDy: number; name: string; startX: number; startY: number } | undefined;
+    | {
+        baseDx: number;
+        baseDy: number;
+        moved: boolean;
+        name: string;
+        startX: number;
+        startY: number;
+      }
+    | undefined;
 
   const onContainerMouseDown = (event: MouseEvent) => {
     const name = findNodeName(event.target);
@@ -150,6 +171,7 @@
     dragState = {
       baseDx: base.dx,
       baseDy: base.dy,
+      moved: false,
       name,
       startX: event.clientX,
       startY: event.clientY
@@ -160,10 +182,16 @@
     if (!dragState) {
       return;
     }
-    panZoomState.isNodeDragging = true;
     const dx = dragState.baseDx + (event.clientX - dragState.startX) / nodePositions.zoom;
     const dy = dragState.baseDy + (event.clientY - dragState.startY) / nodePositions.zoom;
-    findNodeElement(dragState.name)?.style.setProperty('transform', `translate(${dx}px, ${dy}px)`);
+    if (dx === dragState.baseDx && dy === dragState.baseDy) {
+      return;
+    }
+    panZoomState.isNodeDragging = true;
+    dragState.moved = true;
+    for (const element of findNodeElements(dragState.name)) {
+      setElementOffset(element, dx, dy);
+    }
     setNodePosition(dragState.name, dx, dy);
   };
 
@@ -171,10 +199,12 @@
     if (!dragState) {
       return;
     }
-    const { name } = dragState;
+    const { moved, name } = dragState;
     dragState = undefined;
     panZoomState.isNodeDragging = false;
-    persistPositions(name);
+    if (moved) {
+      persistPositions(name);
+    }
   };
 
   const persistPositions = (changedName: string) => {
@@ -282,6 +312,12 @@
         }
         if (graphDiv) {
           applyPositions();
+          // Re-rendering replaces the container contents, dropping the
+          // visual-selected class — restore it for the still-selected node.
+          const selected = selectedNode.current;
+          if (selected) {
+            highlight(findNodeElements(selected.name)[0]);
+          }
         }
         if (view?.parentElement && scroll) {
           view.parentElement.scrollTop = scroll;
