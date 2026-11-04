@@ -4,6 +4,7 @@
   import { editDiagramWithAI } from '$/util/ai';
   import { notify } from '$/util/notify';
   import { updateCode, validatedState } from '$/util/state.svelte';
+  import { tick } from 'svelte';
   import SendIcon from '~icons/material-symbols/send-rounded';
 
   let input = $state('');
@@ -33,9 +34,17 @@
       notify(error instanceof Error ? error.message : 'AI request failed');
     } finally {
       isLoading = false;
+      await tick();
       textarea?.focus();
     }
   };
+
+  // Programmatic clears (input = '' after submit) don't fire oninput, so shrink manually.
+  $effect(() => {
+    if (!input) {
+      resizeTextarea();
+    }
+  });
 </script>
 
 <div class="flex min-w-0 flex-1 items-center gap-2" data-testid={TID.aiEditBar}>
@@ -49,6 +58,9 @@
     rows="1"
     oninput={resizeTextarea}
     onkeydown={(event) => {
+      if (event.isComposing) {
+        return;
+      }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         void submit();
