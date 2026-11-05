@@ -4,6 +4,7 @@
   import Card from '$/components/Card/Card.svelte';
   import SaveDialog from '$/components/Dashboard/SaveDialog.svelte';
   import DiagramDocButton from '$/components/DiagramDocumentationButton.svelte';
+  import DownloadButton from '$/components/DownloadButton.svelte';
   import Editor from '$/components/Editor.svelte';
   import EnhancedEditsButton from '$/components/EnhancedEditsButton.svelte';
   import History from '$/components/History/History.svelte';
@@ -136,6 +137,7 @@
       <HistoryIcon />
     </Toggle>
     <Share />
+    <DownloadButton />
     <Button variant="accent" size="sm" data-testid={TID.saveButton} onclick={onSave}>Save</Button>
     {#if env.isEnabledMermaidChartLinks}
       <Separator orientation="vertical" />
