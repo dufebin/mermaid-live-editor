@@ -42,7 +42,7 @@ Place `<DownloadButton />` between `<Share />` and the Save button (navbar line 
 
 ### 4. Refactor: `src/lib/components/Actions.svelte`
 
-Replace local copies of the extracted functions with imports from `$/util/download`. PNG/SVG buttons, copy-image, and Markdown-copy behavior unchanged. Clipboard copy keeps its own canvas flow (it needs the blob, not a download) — it may reuse shared `getBase64SVG`/`getSvgElement`.
+Replace local copies of the extracted functions with imports from `$/util/download`. PNG/SVG buttons, copy-image, and Markdown-copy behavior unchanged. Clipboard copy keeps its own canvas flow (it needs the blob, not a download), reusing the shared `getBase64SVG`/`getSvgElement` and export helpers.
 
 ## Error handling
 
