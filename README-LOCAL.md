@@ -73,3 +73,9 @@ pnpm dev
 - `Ctrl+S` / `⌘S`：保存（未保存弹命名框，可选文件夹；已保存直接更新）
 - 点击图中节点：选中高亮 + 代码定位 + AI 上下文；双击改标签；拖拽移动（位置随保存持久化）
 - 图下方 AI 输入条：自然语言改图；选中节点后自动附上下文
+
+## 管理命令：
+
+- systemctl status mermaid-live — 状态
+- journalctl -u mermaid-live -f — 日志
+- systemctl restart mermaid-live — 重启
