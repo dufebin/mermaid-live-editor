@@ -42,6 +42,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # NOTE: local-only suite — this e2e run requires the Go storage server
+      # (build with `make -C server-go build`, then run the binary serving
+      # /api on port 18790 — see README-LOCAL), which this workflow does NOT
+      # provision. The storage-dependent specs (auth, save/dashboard, ...) fail
+      # here; run Playwright locally per README-LOCAL instead
+      # (`pnpm test:e2e:auth` spins its own isolated backend, `pnpm test:e2e`
+      # reuses the resident 3000/18790 stack).
       - name: Run Playwright tests
         run: pnpm test:e2e
         env:

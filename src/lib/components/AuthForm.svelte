@@ -36,9 +36,14 @@
       await (mode === 'login' ? login(email, password) : register(email, password));
       const redirect = new URLSearchParams(location.search).get('redirect');
       // Only same-site paths inside `base` are honored; the leading-slash check
-      // keeps the check meaningful even when `base` is the empty string.
+      // keeps the check meaningful even when `base` is the empty string, and
+      // the scheme-relative check keeps `//evil.com` out (it would otherwise
+      // pass both startsWith checks and make goto throw).
       const target =
-        redirect !== null && redirect.startsWith('/') && redirect.startsWith(base)
+        redirect !== null &&
+        redirect.startsWith('/') &&
+        !redirect.startsWith('//') &&
+        redirect.startsWith(base)
           ? redirect
           : resolve('/edit', {});
       await goto(target);
@@ -84,10 +89,12 @@
       {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Register'}
     </Button>
   </form>
+  <!-- location.search carries the ?redirect= param: keep it when switching
+       login <-> register so the return path survives the mode switch. -->
   <a
     class="mt-4 block text-center text-sm text-accent hover:underline"
     data-testid={TID.authSwitchLink}
-    href={`${base}/${mode === 'login' ? 'register' : 'login'}`}>
+    href={`${base}/${mode === 'login' ? 'register' : 'login'}${location.search}`}>
     {mode === 'login' ? 'Need an account? Register' : 'Already have an account? Log in'}
   </a>
 </div>

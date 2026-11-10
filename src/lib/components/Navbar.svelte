@@ -145,4 +145,29 @@
     {/if}
   </div>
   {@render mobileToggle?.()}
+  <!-- Mobile counterpart of the auth block in #menu above (hidden md:flex):
+       without it, mobile users can log in via the guard redirect but never
+       log out. Anonymous-checked (null) shows the login link. -->
+  <div class="flex flex-nowrap items-center gap-2 md:hidden">
+    {#if authState.current}
+      <span class="max-w-24 truncate text-sm" title={authState.current.email}>
+        {authState.current.email}
+      </span>
+      <button
+        class="whitespace-nowrap underline"
+        data-testid={TID.navbarLogoutMobile}
+        onclick={() => {
+          void logout().then(() => location.assign(resolve('/login', {})));
+        }}>
+        Log out
+      </button>
+    {:else if authState.current === null}
+      <a
+        class="whitespace-nowrap text-accent"
+        data-testid={TID.navbarLoginMobile}
+        href={resolve('/login', {})}>
+        Log in
+      </a>
+    {/if}
+  </div>
 </nav>

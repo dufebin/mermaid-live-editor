@@ -116,18 +116,17 @@ func openDB(dir string) (*store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	d, err := sql.Open("sqlite", dir+"/diagrams.db")
+	// Pragmas ride in the DSN so they apply to EVERY pooled connection —
+	// database/sql may silently replace the connection, and a replacement
+	// would otherwise run with foreign_keys OFF. DSN syntax is
+	// modernc.org/sqlite's `_pragma=name(value)`.
+	d, err := sql.Open("sqlite", dir+"/diagrams.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
 	// Mirror node:sqlite's synchronous execution: one connection, no SQLITE_BUSY.
 	d.SetMaxOpenConns(1)
 	s := &store{db: d}
-	for _, pragma := range []string{"PRAGMA journal_mode = WAL", "PRAGMA foreign_keys = ON", "PRAGMA busy_timeout = 5000"} {
-		if _, err := d.Exec(pragma); err != nil {
-			return nil, err
-		}
-	}
 	schema := `
 CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
@@ -484,6 +483,21 @@ func (s *store) importAll(userID string, payload importPayload) (importResult, e
 		if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.State) == "" {
 			result.Skipped++
 			continue
+		}
+		// A diagram may reference a folder its importer does not own (e.g. a
+		// crafted payload with another user's folder UUID). Import such
+		// diagrams as uncategorized instead of attaching them across users —
+		// createDiagram/PATCH already enforce this on the write paths.
+		// NOTE: resolve on tx, not s.db — getFolder uses s.db, which on the
+		// single-connection pool would deadlock inside this open transaction.
+		if d.FolderID != nil {
+			var exists int
+			if err := tx.QueryRow("SELECT COUNT(*) FROM folders WHERE id = ? AND user_id = ?", *d.FolderID, userID).Scan(&exists); err != nil {
+				return result, err
+			}
+			if exists == 0 {
+				d.FolderID = nil
+			}
 		}
 		var positions any
 		if d.Positions != nil {

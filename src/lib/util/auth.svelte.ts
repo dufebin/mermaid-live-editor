@@ -9,12 +9,16 @@ export const authState = {
   }
 };
 
-export const fetchMe = async (): Promise<User | null> => {
+export const fetchMe = async (): Promise<User | null | undefined> => {
   try {
     const response = await fetch('/api/auth/me');
     user = response.ok ? ((await response.json()) as User) : null;
   } catch {
-    user = null;
+    // Transport failure (backend down, network hiccup): the auth state is
+    // UNKNOWN, not "logged out". Leave `user` untouched and return undefined
+    // — guards only redirect on null, so a transient outage never boots the
+    // user to /login.
+    return undefined;
   }
   return user;
 };

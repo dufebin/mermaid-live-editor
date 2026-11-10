@@ -153,6 +153,48 @@ func TestImportAll(t *testing.T) {
 	}
 }
 
+func TestImportAllFolderOwnership(t *testing.T) {
+	s := newTestStore(t)
+	ua, err := s.createUser("import-a@x.com", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ub, err := s.createUser("import-b@x.com", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := ua.ID, ub.ID
+	own := s.createFolder(a, "own", nil)
+	theirs := s.createFolder(b, "theirs", nil)
+	// Diagram referencing a folder imported in the same payload keeps it.
+	payload := importPayload{
+		Folders: []importFolder{{ID: "f-in", Name: "In-payload", CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z"}},
+		Diagrams: []importDiagram{
+			{ID: "d-own", Name: "own folder", State: "s", FolderID: &own.ID},
+			{ID: "d-theirs", Name: "other user's folder", State: "s", FolderID: &theirs.ID},
+			{ID: "d-payload", Name: "same-payload folder", State: "s", FolderID: strPtr("f-in")},
+		},
+	}
+	res, err := s.importAll(a, payload)
+	if err != nil || res.Imported != 4 {
+		t.Fatalf("import: %+v err=%v", res, err)
+	}
+	if got := s.getDiagram(a, "d-own"); got == nil || got.FolderID == nil || *got.FolderID != own.ID {
+		t.Fatalf("own folder must be kept: %+v", got)
+	}
+	if got := s.getDiagram(a, "d-payload"); got == nil || got.FolderID == nil || *got.FolderID != "f-in" {
+		t.Fatalf("same-payload folder must be kept: %+v", got)
+	}
+	// Another user's folder UUID: import as uncategorized, never attach.
+	if got := s.getDiagram(a, "d-theirs"); got == nil || got.FolderID != nil {
+		t.Fatalf("foreign folder must import with null folderId: %+v", got)
+	}
+	// The foreign folder itself stays untouched and unattached.
+	if got := s.listDiagrams(b, diagramQuery{FolderID: theirs.ID}); len(got) != 0 {
+		t.Fatalf("user B must not gain diagrams: %+v", got)
+	}
+}
+
 func TestUserMethods(t *testing.T) {
 	s := newTestStore(t)
 	if _, err := s.createUser("dup@x.com", "h"); err != nil {
