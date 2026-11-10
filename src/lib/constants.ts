@@ -26,6 +26,7 @@ export const TID = {
   errorContainer: 'error-container',
   exportButton: 'export-button',
   importInput: 'import-input',
+  marquee: 'marquee-selection',
   navbarDownloadPNG: 'navbar-download-PNG',
   navbarDownloadSVG: 'navbar-download-SVG',
   newDiagramButton: 'new-diagram-button',

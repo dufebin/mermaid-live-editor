@@ -35,4 +35,23 @@ test.describe('Canvas interaction', () => {
     const after = await viewportTransform(page);
     expect(after).toBe(before);
   });
+
+  test('marquee selects multiple nodes and click clears', async ({ editPage }) => {
+    const { page } = editPage;
+    await editPage.clearEditor();
+    await editPage.typeInEditor('flowchart LR\n A[Alpha] --> B[Beta]');
+    await editPage.checkTextInView('Beta');
+    const view = await editPage.view.boundingBox();
+    expect(view).not.toBeNull();
+    // Drag from the far-left edge across both nodes.
+    await page.mouse.move(view!.x + 5, view!.y + view!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(view!.x + view!.width - 5, view!.y + view!.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.locator('.visual-selected')).toHaveCount(2);
+
+    // A plain click on empty space clears the selection.
+    await page.mouse.click(view!.x + 5, view!.y + 5);
+    await expect(page.locator('.visual-selected')).toHaveCount(0);
+  });
 });

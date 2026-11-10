@@ -1,10 +1,12 @@
 <script lang="ts">
+  import type { NodeRect } from '$/util/marqueeSelection';
   import type { NodeOffset } from '$/util/nodePositions.svelte';
   import type { State, ValidatedState } from '$/types';
   import { updateDiagram } from '$/util/api';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { findDefinitionLine, parseNodeId, replaceNodeLabel } from '$/util/diagramNodes';
   import { currentDiagram } from '$/util/currentDiagram.svelte';
+  import { isMarqueeClick, namesInRect, normalizeRect } from '$/util/marqueeSelection';
   import { notify } from '$/util/notify';
   import {
     nodePositions,
@@ -17,6 +19,8 @@
   import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
   import { clearSelectedNode, selectedNode, setSelectedNode } from '$/util/selectedNode.svelte';
+  import { clearSelectedNodes, selectedNodes, setSelectedNodes } from '$/util/selectedNodes.svelte';
+  import Marquee from '$/components/Marquee.svelte';
   import { TID } from '$/constants';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
@@ -45,7 +49,6 @@
   const NODE_SELECTOR = '.node, .actor';
   const viewId = uniqueID('graph-');
   let diagramType: string | undefined;
-  let selectedSvg: SVGElement | undefined = $state();
   let editingLabel:
     | { height: number; left: number; name: string; top: number; value: string; width: number }
     | undefined = $state();
@@ -72,6 +75,7 @@
       // Prevent page scroll / button activation while space-panning.
       event.preventDefault();
       isSpacePressed = true;
+      cancelMarquee();
       return;
     }
     if (event.key !== 'Escape') {
@@ -82,7 +86,8 @@
       return;
     }
     clearSelectedNode();
-    highlight(undefined);
+    clearSelectedNodes();
+    highlightNames([]);
   };
 
   const onWindowKeyUp = (event: KeyboardEvent) => {
@@ -180,10 +185,84 @@
     return matches;
   };
 
-  const highlight = (element: SVGElement | undefined) => {
-    selectedSvg?.classList.remove('visual-selected');
-    element?.classList.add('visual-selected');
-    selectedSvg = element;
+  // Set-based highlight: every rendered element resolving to a selected name
+  // gets .visual-selected (sequence actors render two boxes per name).
+  const highlightNames = (names: Iterable<string>): void => {
+    for (const element of container?.querySelectorAll('.visual-selected') ?? []) {
+      element.classList.remove('visual-selected');
+    }
+    const set = new Set(names);
+    for (const element of container?.querySelectorAll<SVGElement>(NODE_SELECTOR) ?? []) {
+      const name = findNodeNameFromElement(element);
+      if (name && set.has(name)) {
+        element.classList.add('visual-selected');
+      }
+    }
+  };
+
+  // Single writer for selection changes: the multi store is the visual source
+  // of truth; size 1 also drives the single-selection module (Monaco sync +
+  // AI chip).
+  const applySelection = (names: string[]): void => {
+    setSelectedNodes(names);
+    if (names.length === 1) {
+      const line = findDefinitionLine(code, names[0]);
+      setSelectedNode({
+        lineText: (code.split('\n')[Math.max((line ?? 1) - 1, 0)] ?? '').trim(),
+        name: names[0]
+      });
+    } else {
+      clearSelectedNode();
+    }
+    highlightNames(names);
+  };
+
+  // Marquee state. `marquee` is view-relative while active; `nodeRects` is a
+  // once-per-drag snapshot in page coordinates.
+  let marquee = $state<{ curX: number; curY: number; startX: number; startY: number }>();
+  let nodeRects: NodeRect[] = [];
+
+  const cancelMarquee = (): void => {
+    marquee = undefined;
+    highlightNames(selectedNodes.current);
+  };
+
+  const startMarquee = (event: MouseEvent): void => {
+    // Snapshot node rects once: nodes do not move during a marquee.
+    nodeRects = [];
+    for (const element of container?.querySelectorAll<SVGElement>(NODE_SELECTOR) ?? []) {
+      const name = findNodeNameFromElement(element);
+      if (name) {
+        const { height, left, top, width } = element.getBoundingClientRect();
+        nodeRects.push({ name, rect: { height, left, top, width } });
+      }
+    }
+    marquee = {
+      curX: event.clientX,
+      curY: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY
+    };
+  };
+
+  const finishMarquee = (event: MouseEvent): void => {
+    if (!marquee) {
+      return;
+    }
+    const { startX, startY } = marquee;
+    const rect = normalizeRect(startX, startY, event.clientX, event.clientY);
+    marquee = undefined;
+    if (isMarqueeClick(startX, startY, event.clientX, event.clientY)) {
+      // A click, not a drag: plain click clears, shift+click keeps the set.
+      if (!event.shiftKey) {
+        applySelection([]);
+      } else {
+        highlightNames(selectedNodes.current);
+      }
+      return;
+    }
+    const hits = namesInRect(nodeRects, rect);
+    applySelection(event.shiftKey ? [...new Set([...selectedNodes.current, ...hits])] : hits);
   };
 
   // Offsets use the CSS `translate` property, which composes with mermaid's
@@ -237,7 +316,7 @@
       return; // node path — handled by onContainerMouseDown
     }
     event.stopPropagation();
-    // Task 4 starts the marquee here.
+    startMarquee(event);
   };
 
   // Chrome also fires a pointerdown for every mousedown, and Hammerjs listens
@@ -268,12 +347,7 @@
     if (!(element instanceof SVGElement)) {
       return;
     }
-    const line = findDefinitionLine(code, name);
-    setSelectedNode({
-      lineText: (code.split('\n')[Math.max((line ?? 1) - 1, 0)] ?? '').trim(),
-      name
-    });
-    highlight(element);
+    applySelection([name]);
     const base = nodePositions.value[name] ?? { dx: 0, dy: 0 };
     dragState = {
       baseDx: base.dx,
@@ -286,6 +360,14 @@
   };
 
   const onContainerMouseMove = (event: MouseEvent) => {
+    if (marquee) {
+      marquee = { ...marquee, curX: event.clientX, curY: event.clientY };
+      const rect = normalizeRect(marquee.startX, marquee.startY, event.clientX, event.clientY);
+      const hits = namesInRect(nodeRects, rect);
+      // Live preview only — the set itself is written on mouseup.
+      highlightNames(event.shiftKey ? [...new Set([...selectedNodes.current, ...hits])] : hits);
+      return;
+    }
     if (!dragState) {
       return;
     }
@@ -304,8 +386,15 @@
     setNodePosition(dragState.name, dx, dy);
   };
 
-  const onContainerMouseUp = () => {
+  const onContainerMouseUp = (event?: MouseEvent) => {
     isPanning = false;
+    if (marquee) {
+      if (event) {
+        finishMarquee(event);
+      } else {
+        cancelMarquee(); // mouseleave: abort without changing the selection
+      }
+    }
     if (!dragState) {
       return;
     }
@@ -375,6 +464,21 @@
     }
   };
 
+  // Marquee rectangle translated into view-relative coordinates for the
+  // overlay component (the overlay lives inside #view, not #container).
+  const marqueeRect = $derived.by(() => {
+    if (!marquee || !view) {
+      return undefined;
+    }
+    const viewRect = view.getBoundingClientRect();
+    return normalizeRect(
+      marquee.startX - viewRect.left,
+      marquee.startY - viewRect.top,
+      marquee.curX - viewRect.left,
+      marquee.curY - viewRect.top
+    );
+  });
+
   const handleStateChange = async (state: ValidatedState) => {
     const startTime = Date.now();
     if (state.error !== undefined) {
@@ -423,11 +527,8 @@
         if (graphDiv) {
           applyPositions();
           // Re-rendering replaces the container contents, dropping the
-          // visual-selected class — restore it for the still-selected node.
-          const selected = selectedNode.current;
-          if (selected) {
-            highlight(findNodeElements(selected.name)[0]);
-          }
+          // visual-selected class — restore it for the selected set.
+          highlightNames(selectedNodes.current);
         }
         if (view?.parentElement && scroll) {
           view.parentElement.scrollTop = scroll;
@@ -453,21 +554,26 @@
 
   // Reload saved node offsets when the active diagram changes. A different
   // diagram invalidates the current selection — its node names are stale.
-  // (Visual un-highlighting happens via the chip-clear effect below; calling
-  // highlight() here would make selectedSvg a dependency of this effect and
-  // re-clear the selection on every highlight change.)
+  // (Visual un-highlighting happens via the chip-clear effect below.)
   $effect(() => {
     const diagram = currentDiagram.diagram;
     resetNodePositions(sanitizePositions(diagram?.positions));
     clearSelectedNode();
+    clearSelectedNodes();
   });
 
-  // Clearing the selection from the chip or Monaco must also drop the SVG
-  // highlight so all three stay in sync (unless a label edit is in flight).
+  // The AI-bar chip and other external clearSelectedNode() callers must drop
+  // the whole selection. When the multi-set is larger than 1 the single
+  // selection is intentionally absent (applySelection cleared it), so only
+  // clear for sets of size <= 1.
   $effect(() => {
-    if (!selectedNode.current && !editingLabel) {
-      highlight(undefined);
+    if (selectedNode.current || editingLabel || selectedNodes.current.length > 1) {
+      return;
     }
+    if (selectedNodes.current.length === 1) {
+      clearSelectedNodes();
+    }
+    highlightNames([]);
   });
 
   // Queue state changes to avoid race condition
@@ -504,6 +610,9 @@
     onmouseup={editable ? onContainerMouseUp : undefined}
     onmouseleave={editable ? onContainerMouseUp : undefined}>
   </div>
+  {#if marqueeRect}
+    <Marquee rect={marqueeRect} />
+  {/if}
   {#if editingLabel}
     <input
       bind:value={editingLabel.value}
