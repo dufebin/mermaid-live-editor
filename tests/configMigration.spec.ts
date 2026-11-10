@@ -1,5 +1,6 @@
 import { C } from '$/constants';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './test';
 
 // What a pre-mermaid-12 install left in localStorage: the editor seeded every
 // config with the default theme.

@@ -18,12 +18,13 @@
     type Diagram,
     type Folder
   } from '$/util/api';
+  import { fetchMe } from '$/util/auth.svelte';
   import { clearCurrentDiagram, setCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { notify } from '$/util/notify';
   import { deserializeState } from '$/util/serde';
   import { defaultState, replaceInputState, sanitizeConfig } from '$/util/state.svelte';
   import { goto } from '$app/navigation';
-  import { resolve } from '$app/paths';
+  import { base, resolve } from '$app/paths';
   import AddIcon from '~icons/material-symbols/add-rounded';
   import DownloadIcon from '~icons/material-symbols/download-rounded';
   import { onMount } from 'svelte';
@@ -124,6 +125,19 @@
       input.value = '';
     }
   };
+
+  // Route guard: redirect to login only when auth is checked-and-logged-out
+  // (`null`). The handler runs after the check resolves, so the pending
+  // (`undefined`) state never redirects.
+  onMount(() => {
+    void fetchMe().then((user) => {
+      if (user === null) {
+        location.assign(
+          `${base}/login?redirect=${encodeURIComponent(location.pathname + location.hash)}`
+        );
+      }
+    });
+  });
 
   onMount(() => void reload());
 </script>

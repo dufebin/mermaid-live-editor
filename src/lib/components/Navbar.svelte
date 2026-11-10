@@ -11,9 +11,12 @@
   import { resolve } from '$app/paths';
   import MainMenu from '$/components/MainMenu.svelte';
   import { Button } from '$/components/ui/button';
+  import * as Popover from '$/components/ui/popover';
   import { Separator } from '$/components/ui/separator';
+  import { TID } from '$/constants';
+  import { authState, fetchMe, logout } from '$/util/auth.svelte';
   import { dismissPromotion, getActivePromotion } from '$lib/util/promos/promo.svelte';
-  import { untrack, type ComponentProps, type Snippet } from 'svelte';
+  import { onMount, untrack, type ComponentProps, type Snippet } from 'svelte';
   import MermaidIcon from '~icons/custom/mermaid';
   import CloseIcon from '~icons/material-symbols/close-rounded';
   import GithubIcon from '~icons/mdi/github';
@@ -42,6 +45,12 @@
   ];
 
   let activePromotion = $state(untrack(() => (hidePromotion ? undefined : getActivePromotion())));
+
+  // Populate the auth state on first load; the navbar renders nothing
+  // auth-related until fetchMe() resolves (undefined = not yet checked).
+  onMount(() => {
+    void fetchMe();
+  });
 
   const trackBannerClick = () => {
     if (!activePromotion) {
@@ -97,6 +106,43 @@
     <DropdownNavMenu icon={GithubIcon} links={githubLinks} />
     <Separator orientation="vertical" />
     {@render children()}
+    {#if authState.current}
+      <Separator orientation="vertical" />
+      <Popover.Root>
+        <Popover.Trigger class="flex items-center gap-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="max-w-40 truncate"
+            data-testid={TID.navbarUserMenu}
+            title={authState.current.email}>
+            {authState.current.email}
+          </Button>
+        </Popover.Trigger>
+        <Popover.Content>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <ul tabindex="0" class="flex flex-col">
+            <li class="rounded-md p-2 hover:bg-muted">
+              <button
+                class="whitespace-nowrap underline"
+                data-testid={TID.navbarLogout}
+                onclick={() => {
+                  void logout().then(() => location.assign(resolve('/login', {})));
+                }}>
+                Log out
+              </button>
+            </li>
+          </ul>
+        </Popover.Content>
+      </Popover.Root>
+    {:else if authState.current === null}
+      <a
+        class="whitespace-nowrap text-accent"
+        data-testid={TID.navbarLogin}
+        href={resolve('/login', {})}>
+        Log in
+      </a>
+    {/if}
   </div>
   {@render mobileToggle?.()}
 </nav>

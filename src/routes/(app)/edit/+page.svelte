@@ -27,6 +27,7 @@
   import { TID } from '$/constants';
   import type { EditorMode, Tab } from '$/types';
   import { updateDiagram } from '$/util/api';
+  import { fetchMe } from '$/util/auth.svelte';
   import { currentDiagram, setCurrentDiagram } from '$/util/currentDiagram.svelte';
   import { env } from '$/util/env';
   import { shouldShowEditorChooser } from '$/util/migration/domainMigration';
@@ -35,7 +36,7 @@
   import { validatedState, updateCodeStore, urls } from '$/util/state.svelte';
   import { logEvent, logMermaidChartClick } from '$/util/stats';
   import { getContactSalesUrl, initHandler } from '$/util/util';
-  import { resolve } from '$app/paths';
+  import { base, resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import CodeIcon from '~icons/custom/code';
   import HistoryIcon from '~icons/material-symbols/history';
@@ -76,6 +77,19 @@
 
   // Record the Timeline for the whole session, not just while the panel is open.
   onMount(() => startAutoSave());
+
+  // Route guard: redirect to login only when auth is checked-and-logged-out
+  // (`null`). The handler runs after the check resolves, so the pending
+  // (`undefined`) state never redirects.
+  onMount(() => {
+    void fetchMe().then((user) => {
+      if (user === null) {
+        location.assign(
+          `${base}/login?redirect=${encodeURIComponent(location.pathname + location.hash)}`
+        );
+      }
+    });
+  });
 
   let isHistoryOpen = $state(false);
 
