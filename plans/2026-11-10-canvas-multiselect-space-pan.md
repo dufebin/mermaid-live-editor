@@ -327,6 +327,8 @@ Empty-canvas mouse drag must stop panning on the editable page (it becomes marqu
 
 Key mechanism: a **capture-phase** `mousedown` listener on the container calls `event.stopPropagation()` for empty-space clicks when Space is not held. svg-pan-zoom binds its own mousedown on the inner SVG element — it never sees the stopped event, so it cannot start a pan. When Space IS held the event passes through and svg-pan-zoom's built-in mouse pan does the work. `panZoom.ts` is not modified; the Hammer touch path is untouched.
 
+> **As-built correction (verified during Task 3 implementation and review):** on pointer-event browsers the desktop pan is driven by Hammer's PointerEventInput bound to the SVG (via `panZoom.ts` `customEventsHandler`), so a mousedown-only gate does NOT stop it. The implemented gate is reached from TWO capture listeners on `#container`: `onmousedowncapture` and `onContainerPointerDownCapture` (wired via `onpointerdowncapture`, which delegates to the same gate for `pointerType === 'mouse'` only — touch/pen pointerdown always passes through). Both fire per mouse press with identical coordinates, so the gate is idempotent by design. Tasks 4–5 must hook this shared gate, never gate touch events.
+
 Important Svelte/DOM detail: `stopPropagation()` during the capture phase on the container also prevents the container's own **bubble-phase** listeners (`onmousedown` etc.) from firing for that event — the old "click empty space clears selection" branch in `onContainerMouseDown` becomes unreachable and is removed here (click-to-clear returns in Task 4 via the marquee click threshold).
 
 **Files:**
@@ -340,7 +342,7 @@ Important Svelte/DOM detail: `stopPropagation()` during the capture phase on the
 - Produces (used by Tasks 4–5):
   - `let isSpacePressed = $state(false)` in `View.svelte`
   - `const isEditableTarget = (target: EventTarget | null): boolean` in `View.svelte`
-  - capture handler `onContainerMouseDownCapture` wired via `onmousedowncapture` on `#container`
+  - shared capture gate `onContainerMouseDownCapture`, wired via BOTH `onmousedowncapture` and `onContainerPointerDownCapture` (`onpointerdowncapture`, `pointerType === 'mouse'` only) on `#container`
 
 - [ ] **Step 1: Write the failing e2e tests**
 
@@ -718,7 +720,7 @@ const finishMarquee = (event: MouseEvent): void => {
 
 5d. Hook the marquee into the handlers:
 
-- Capture gate (`onContainerMouseDownCapture`): replace the trailing comment `// Task 4 starts the marquee here.` with `startMarquee(event);` (keep the `event.stopPropagation();` line above it).
+- Shared capture gate (`onContainerMouseDownCapture`): replace the trailing comment `// Task 4 starts the marquee here.` with `startMarquee(event);` (keep the `event.stopPropagation();` line above it). The gate is invoked from BOTH `onmousedowncapture` and the mouse-only `onpointerdowncapture` path, so `startMarquee` runs twice per press with identical coordinates — it must stay idempotent (it is: same start point, re-snapshot of node rects). Never gate touch pointer events.
 - Space keydown in `onWindowKeyDown`: after `isSpacePressed = true;` add `cancelMarquee();`.
 - `onContainerMouseMove`: add a marquee branch at the top:
 
