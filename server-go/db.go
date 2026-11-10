@@ -172,7 +172,8 @@ func (s *store) listFolders() []Folder {
 }
 
 func (s *store) listAllDiagrams() []Diagram {
-	rows, err := s.db.Query(diagramSelect() + " ORDER BY updated_at DESC")
+	// NO ORDER BY: db.mjs's bare SELECT returns natural (rowid) order — parity.
+	rows, err := s.db.Query(diagramSelect())
 	if err != nil {
 		return nil
 	}
