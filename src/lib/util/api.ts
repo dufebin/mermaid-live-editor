@@ -67,7 +67,7 @@ const authRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
 };
 
 export const apiRegister = (email: string, password: string): Promise<User> =>
-  authRequest<User>('', { body: JSON.stringify({ email, password }), method: 'POST' });
+  authRequest<User>('/register', { body: JSON.stringify({ email, password }), method: 'POST' });
 
 export const apiLogin = (email: string, password: string): Promise<User> =>
   authRequest<User>('/login', { body: JSON.stringify({ email, password }), method: 'POST' });
