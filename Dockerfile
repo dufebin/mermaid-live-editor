@@ -41,11 +41,21 @@ EXPOSE 8080
 COPY ./nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=mermaid-live-editor-builder /app/docs /usr/share/nginx/html
 
-FROM docker.io/library/node:24.16.0-alpine3.22 AS storage-api
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS storage-api-builder
+
+WORKDIR /src
+
+COPY server-go/go.mod server-go/go.sum ./
+RUN go mod download
+
+COPY server-go/ ./
+RUN CGO_ENABLED=0 go build -o /out/mermaid-storage .
+
+FROM docker.io/library/alpine:3.22 AS storage-api
 
 ENV HOST=0.0.0.0
 WORKDIR /app
-COPY ./server ./server
+COPY --from=storage-api-builder /out/mermaid-storage /usr/local/bin/mermaid-storage
 VOLUME /app/server-data
 EXPOSE 18790
-CMD ["node", "server/index.mjs"]
+CMD ["mermaid-storage"]
