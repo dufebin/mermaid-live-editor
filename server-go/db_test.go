@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -192,6 +193,41 @@ func TestClaimUnowned(t *testing.T) {
 	s.db.QueryRow("SELECT user_id FROM folders WHERE id = 'legacy-f'").Scan(&owner)
 	if owner != first.ID {
 		t.Fatal("claim must be first-writer-wins")
+	}
+}
+
+func TestCreateUserAndClaim(t *testing.T) {
+	s := newTestStore(t)
+	s.db.Exec("INSERT INTO folders (id, name, parent_id, created_at, updated_at, user_id) VALUES ('legacy-f', 'Legacy', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', NULL)")
+	s.db.Exec("INSERT INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at, user_id) VALUES ('legacy-d', NULL, 'L', 's', 0, NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', NULL)")
+
+	first, err := s.createUserAndClaim("first@x.com", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	s.db.QueryRow("SELECT user_id FROM folders WHERE id = 'legacy-f'").Scan(&owner)
+	if owner != first.ID {
+		t.Fatalf("first user must own legacy folder: %q", owner)
+	}
+	s.db.QueryRow("SELECT user_id FROM diagrams WHERE id = 'legacy-d'").Scan(&owner)
+	if owner != first.ID {
+		t.Fatalf("first user must own legacy diagram: %q", owner)
+	}
+
+	second, err := s.createUserAndClaim("second@x.com", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.db.QueryRow("SELECT user_id FROM folders WHERE id = 'legacy-f'").Scan(&owner)
+	if owner != first.ID {
+		t.Fatal("second registration must not re-claim")
+	}
+	if second.ID == first.ID {
+		t.Fatal("distinct users must get distinct ids")
+	}
+	if _, err := s.createUserAndClaim("FIRST@x.com", "h"); !errors.Is(err, errEmailExists) {
+		t.Fatal("duplicate email must return errEmailExists")
 	}
 }
 

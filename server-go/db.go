@@ -394,6 +394,42 @@ func (s *store) createUser(email, passwordHash string) (User, error) {
 	return *s.getUser(id), nil
 }
 
+// createUserAndClaim inserts the user and, if they are the first user,
+// claims all NULL-owner rows — atomically, so concurrent first
+// registrations cannot strand legacy data.
+func (s *store) createUserAndClaim(email, passwordHash string) (User, error) {
+	email = strings.ToLower(email)
+	id := newUUID()
+	ts := now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.Exec("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)", id, email, passwordHash, ts); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return User{}, errEmailExists
+		}
+		return User{}, err
+	}
+	if count == 0 {
+		if _, err := tx.Exec("UPDATE folders SET user_id = ? WHERE user_id IS NULL", id); err != nil {
+			return User{}, err
+		}
+		if _, err := tx.Exec("UPDATE diagrams SET user_id = ? WHERE user_id IS NULL", id); err != nil {
+			return User{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	return *s.getUser(id), nil
+}
+
 // claimUnowned assigns every NULL-owner row to userID (first registration).
 func (s *store) claimUnowned(userID string) error {
 	tx, err := s.db.Begin()

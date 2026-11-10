@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,16 +94,14 @@ func (a *api) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "email already registered")
 		return
 	}
-	user, err := a.s.createUser(email, hash)
+	user, err := a.s.createUserAndClaim(email, hash)
 	if err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-	if a.s.countUsers() == 1 {
-		if err := a.s.claimUnowned(user.ID); err != nil {
-			writeError(w, 400, err.Error())
+		if errors.Is(err, errEmailExists) {
+			writeError(w, 409, "email already registered")
 			return
 		}
+		writeError(w, 400, err.Error())
+		return
 	}
 	setSessionCookie(w, signJWT(user.ID, time.Now(), a.secret))
 	writeJSON(w, 201, user)
