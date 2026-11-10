@@ -399,7 +399,8 @@ func (s *store) listFolders() []Folder {
 }
 
 func (s *store) listAllDiagrams() []Diagram {
-	rows, err := s.db.Query(diagramSelect() + " ORDER BY updated_at DESC")
+	// NO ORDER BY: db.mjs's bare SELECT returns natural (rowid) order — parity.
+	rows, err := s.db.Query(diagramSelect())
 	if err != nil {
 		return nil
 	}
@@ -1076,13 +1077,38 @@ const expand = (text, refs) =>
     return String(refs[key]?.[Number(index)]?.[field] ?? '');
   });
 
+// Structural comparison: Node and Go marshal JSON with different key orders
+// (object insertion order vs struct order) and different positions key order
+// (insertion vs sorted), so raw-text diffing would false-positive. Parse both
+// bodies, canonicalize (recursively sort object keys), THEN compare strings.
+const canonicalize = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalize(value[key])])
+    );
+  }
+  return value;
+};
+
 const request = async (port, method, path, body, refs) => {
   const response = await fetch(`http://127.0.0.1:${port}${expand(path, refs)}`, {
     body: body === undefined ? undefined : expand(JSON.stringify(body), refs),
     headers: { 'Content-Type': 'application/json' },
     method
   });
-  return { body: normalize(await response.text()), status: response.status };
+  const text = await response.text();
+  let comparable;
+  try {
+    comparable = normalize(JSON.stringify(canonicalize(JSON.parse(text))));
+  } catch {
+    comparable = normalize(text); // non-JSON bodies: raw text, normalized
+  }
+  return { body: comparable, status: response.status };
 };
 
 // Corpus: every route + every validation branch. {{folders.0.id}} etc. come
