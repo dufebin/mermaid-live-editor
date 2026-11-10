@@ -175,8 +175,8 @@ CREATE INDEX IF NOT EXISTS idx_diagrams_favorite ON diagrams(favorite);`
 
 func (s *store) Close() error { return s.db.Close() }
 
-func (s *store) listFolders() []Folder {
-	rows, err := s.db.Query("SELECT id, name, parent_id, created_at, updated_at FROM folders ORDER BY name")
+func (s *store) listFolders(userID string) []Folder {
+	rows, err := s.db.Query("SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE user_id = ? ORDER BY name", userID)
 	if err != nil {
 		return nil
 	}
@@ -192,9 +192,9 @@ func (s *store) listFolders() []Folder {
 	return out
 }
 
-func (s *store) listAllDiagrams() []Diagram {
+func (s *store) listAllDiagrams(userID string) []Diagram {
 	// NO ORDER BY: db.mjs's bare SELECT returns natural (rowid) order — parity.
-	rows, err := s.db.Query(diagramSelect())
+	rows, err := s.db.Query(diagramSelect()+" WHERE user_id = ?", userID)
 	if err != nil {
 		return nil
 	}
@@ -210,8 +210,8 @@ func (s *store) listAllDiagrams() []Diagram {
 	return out
 }
 
-func (s *store) getFolder(id string) *Folder {
-	row := s.db.QueryRow("SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE id = ?", id)
+func (s *store) getFolder(userID, id string) *Folder {
+	row := s.db.QueryRow("SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE id = ? AND user_id = ?", id, userID)
 	f, err := scanFolder(row)
 	if err != nil {
 		return nil
@@ -219,8 +219,8 @@ func (s *store) getFolder(id string) *Folder {
 	return &f
 }
 
-func (s *store) isSelfOrAncestor(id, ancestorID string) bool {
-	current := s.getFolder(ancestorID)
+func (s *store) isSelfOrAncestor(userID, id, ancestorID string) bool {
+	current := s.getFolder(userID, ancestorID)
 	for current != nil {
 		if current.ID == id {
 			return true
@@ -228,23 +228,23 @@ func (s *store) isSelfOrAncestor(id, ancestorID string) bool {
 		if current.ParentID == nil {
 			return false
 		}
-		current = s.getFolder(*current.ParentID)
+		current = s.getFolder(userID, *current.ParentID)
 	}
 	return false
 }
 
-func (s *store) createFolder(name string, parentID *string) Folder {
+func (s *store) createFolder(userID, name string, parentID *string) Folder {
 	id := newUUID()
 	ts := now()
-	s.db.Exec("INSERT INTO folders (id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		id, name, parentID, ts, ts)
-	return *s.getFolder(id)
+	s.db.Exec("INSERT INTO folders (id, name, parent_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, name, parentID, userID, ts, ts)
+	return *s.getFolder(userID, id)
 }
 
 // updateFolder patches a folder; a missing id yields (nil, nil), matching
 // db.mjs returning null for missing rows.
-func (s *store) updateFolder(id string, name *string, parentID parentValue) (*Folder, error) {
-	f := s.getFolder(id)
+func (s *store) updateFolder(userID, id string, name *string, parentID parentValue) (*Folder, error) {
+	f := s.getFolder(userID, id)
 	if f == nil {
 		return nil, nil
 	}
@@ -255,20 +255,20 @@ func (s *store) updateFolder(id string, name *string, parentID parentValue) (*Fo
 	if parentID.Set {
 		nextParent = parentID.Value
 	}
-	if _, err := s.db.Exec("UPDATE folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?",
-		nextName, nextParent, now(), id); err != nil {
+	if _, err := s.db.Exec("UPDATE folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		nextName, nextParent, now(), id, userID); err != nil {
 		return nil, err
 	}
-	return s.getFolder(id), nil
+	return s.getFolder(userID, id), nil
 }
 
-func (s *store) deleteFolder(id string) bool {
-	res, err := s.db.Exec("DELETE FROM folders WHERE id = ?", id)
+func (s *store) deleteFolder(userID, id string) bool {
+	res, err := s.db.Exec("DELETE FROM folders WHERE id = ? AND user_id = ?", id, userID)
 	return err == nil && res != nil && rowsAffected(res) > 0
 }
 
-func (s *store) listDiagrams(q diagramQuery) []Diagram {
-	where, params := []string{}, []any{}
+func (s *store) listDiagrams(userID string, q diagramQuery) []Diagram {
+	where, params := []string{"user_id = ?"}, []any{userID}
 	if q.FolderID == "root" {
 		where = append(where, "folder_id IS NULL")
 	} else if q.FolderID != "" {
@@ -303,8 +303,8 @@ func (s *store) listDiagrams(q diagramQuery) []Diagram {
 	return out
 }
 
-func (s *store) getDiagram(id string) *Diagram {
-	row := s.db.QueryRow(diagramSelect()+" WHERE id = ?", id)
+func (s *store) getDiagram(userID, id string) *Diagram {
+	row := s.db.QueryRow(diagramSelect()+" WHERE id = ? AND user_id = ?", id, userID)
 	d, err := scanDiagram(row)
 	if err != nil {
 		return nil
@@ -312,18 +312,18 @@ func (s *store) getDiagram(id string) *Diagram {
 	return &d
 }
 
-func (s *store) createDiagram(in diagramInput) Diagram {
+func (s *store) createDiagram(userID string, in diagramInput) Diagram {
 	id := newUUID()
 	ts := now()
-	s.db.Exec("INSERT INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)",
-		id, in.FolderID, in.Name, in.State, positionsToJSON(in.Positions), ts, ts)
-	return *s.getDiagram(id)
+	s.db.Exec("INSERT INTO diagrams (id, folder_id, name, state, favorite, positions, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)",
+		id, in.FolderID, in.Name, in.State, positionsToJSON(in.Positions), userID, ts, ts)
+	return *s.getDiagram(userID, id)
 }
 
 // updateDiagram patches a diagram; a missing id yields (nil, nil), matching
 // db.mjs returning null for missing rows.
-func (s *store) updateDiagram(id string, p diagramPatch) (*Diagram, error) {
-	d := s.getDiagram(id)
+func (s *store) updateDiagram(userID, id string, p diagramPatch) (*Diagram, error) {
+	d := s.getDiagram(userID, id)
 	if d == nil {
 		return nil, nil
 	}
@@ -343,15 +343,15 @@ func (s *store) updateDiagram(id string, p diagramPatch) (*Diagram, error) {
 	if p.Positions.Set {
 		positions = p.Positions.Value
 	}
-	if _, err := s.db.Exec("UPDATE diagrams SET name = ?, folder_id = ?, state = ?, favorite = ?, positions = ?, updated_at = ? WHERE id = ?",
-		name, folder, state, favorite, positionsToJSON(positions), now(), id); err != nil {
+	if _, err := s.db.Exec("UPDATE diagrams SET name = ?, folder_id = ?, state = ?, favorite = ?, positions = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		name, folder, state, favorite, positionsToJSON(positions), now(), id, userID); err != nil {
 		return nil, err
 	}
-	return s.getDiagram(id), nil
+	return s.getDiagram(userID, id), nil
 }
 
-func (s *store) deleteDiagram(id string) bool {
-	res, err := s.db.Exec("DELETE FROM diagrams WHERE id = ?", id)
+func (s *store) deleteDiagram(userID, id string) bool {
+	res, err := s.db.Exec("DELETE FROM diagrams WHERE id = ? AND user_id = ?", id, userID)
 	return err == nil && res != nil && rowsAffected(res) > 0
 }
 
@@ -418,7 +418,7 @@ func scanUser(row interface{ Scan(...any) error }) *User {
 	return &u
 }
 
-func (s *store) importAll(payload importPayload) (importResult, error) {
+func (s *store) importAll(userID string, payload importPayload) (importResult, error) {
 	var result importResult
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -429,21 +429,21 @@ func (s *store) importAll(payload importPayload) (importResult, error) {
 	if _, err := tx.Exec("PRAGMA defer_foreign_keys = ON"); err != nil {
 		return result, err
 	}
-	insertFolder, _ := tx.Prepare("INSERT OR IGNORE INTO folders (id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+	insertFolder, _ := tx.Prepare("INSERT OR IGNORE INTO folders (id, name, parent_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
 	for _, f := range payload.Folders {
 		if strings.TrimSpace(f.ID) == "" || strings.TrimSpace(f.Name) == "" {
 			result.Skipped++
 			continue
 		}
 		createdAt, updatedAt := orNow(f.CreatedAt), orNow(f.UpdatedAt)
-		res, err := insertFolder.Exec(f.ID, f.Name, f.ParentID, createdAt, updatedAt)
+		res, err := insertFolder.Exec(f.ID, f.Name, f.ParentID, userID, createdAt, updatedAt)
 		if err == nil && rowsAffected(res) > 0 {
 			result.Imported++
 		} else if err == nil {
 			result.Skipped++
 		}
 	}
-	insertDiagram, _ := tx.Prepare("INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+	insertDiagram, _ := tx.Prepare("INSERT OR IGNORE INTO diagrams (id, folder_id, name, state, favorite, positions, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	for _, d := range payload.Diagrams {
 		if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.State) == "" {
 			result.Skipped++
@@ -453,7 +453,7 @@ func (s *store) importAll(payload importPayload) (importResult, error) {
 		if d.Positions != nil {
 			positions = positionsToJSON(d.Positions)
 		}
-		res, err := insertDiagram.Exec(d.ID, d.FolderID, d.Name, d.State, d.Favorite, positions, orNow(d.CreatedAt), orNow(d.UpdatedAt))
+		res, err := insertDiagram.Exec(d.ID, d.FolderID, d.Name, d.State, d.Favorite, positions, userID, orNow(d.CreatedAt), orNow(d.UpdatedAt))
 		if err == nil && rowsAffected(res) > 0 {
 			result.Imported++
 		} else if err == nil {

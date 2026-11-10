@@ -9,20 +9,40 @@ import (
 
 const maxBodyBytes = 5_000_000
 
-type api struct{ s *store }
+type api struct {
+	s      *store
+	secret []byte
+}
 
-func newHandler(s *store) http.Handler {
-	a := &api{s}
+func newHandler(s *store, secret []byte) http.Handler {
+	a := &api{s, secret}
 	mux := http.NewServeMux()
 	// Method dispatch happens inside each handler: node 404s (never 405s) on mismatch.
-	mux.HandleFunc("/api/folders", a.folders)
-	mux.HandleFunc("/api/folders/", a.folderItem)
-	mux.HandleFunc("/api/diagrams", a.diagrams)
-	mux.HandleFunc("/api/diagrams/", a.diagramItem)
-	mux.HandleFunc("/api/export", a.export)
-	mux.HandleFunc("/api/import", a.importEndpoint)
+	mux.HandleFunc("/api/auth/register", a.handleRegister)
+	mux.HandleFunc("/api/auth/login", a.handleLogin)
+	mux.HandleFunc("/api/auth/logout", a.handleLogout)
+	mux.HandleFunc("/api/auth/me", a.handleMe)
+	mux.HandleFunc("/api/folders", a.requireAuth(a.folders))
+	mux.HandleFunc("/api/folders/", a.requireAuth(a.folderItem))
+	mux.HandleFunc("/api/diagrams", a.requireAuth(a.diagrams))
+	mux.HandleFunc("/api/diagrams/", a.requireAuth(a.diagramItem))
+	mux.HandleFunc("/api/export", a.requireAuth(a.export))
+	mux.HandleFunc("/api/import", a.requireAuth(a.importEndpoint))
 	mux.HandleFunc("/", a.notFound)
 	return mux
+}
+
+// requireAuth gates a handler behind a valid session cookie, threading the JWT's
+// userID into the handler for per-user store scoping.
+func (a *api) requireAuth(handler func(w http.ResponseWriter, r *http.Request, userID string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := a.userIDFromRequest(r)
+		if !ok {
+			writeError(w, 401, "unauthorized")
+			return
+		}
+		handler(w, r, userID)
+	}
 }
 
 func (a *api) notFound(w http.ResponseWriter, _ *http.Request) {
@@ -138,10 +158,10 @@ func isJSONArray(v json.RawMessage) bool {
 	return len(trimmed) > 0 && trimmed[0] == '['
 }
 
-func (a *api) folders(w http.ResponseWriter, r *http.Request) {
+func (a *api) folders(w http.ResponseWriter, r *http.Request, userID string) {
 	switch r.Method {
 	case "GET":
-		writeJSON(w, 200, orEmpty(a.s.listFolders()))
+		writeJSON(w, 200, orEmpty(a.s.listFolders(userID)))
 	case "POST":
 		body, err := readBody(r)
 		if err != nil {
@@ -154,17 +174,17 @@ func (a *api) folders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		parent := rawParent(body["parentId"])
-		if parent.Set && parent.Value != nil && a.s.getFolder(*parent.Value) == nil {
+		if parent.Set && parent.Value != nil && a.s.getFolder(userID, *parent.Value) == nil {
 			writeError(w, 404, "parent folder not found")
 			return
 		}
-		writeJSON(w, 201, a.s.createFolder(strings.TrimSpace(*name), parent.Value))
+		writeJSON(w, 201, a.s.createFolder(userID, strings.TrimSpace(*name), parent.Value))
 	default:
 		a.notFound(w, r)
 	}
 }
 
-func (a *api) folderItem(w http.ResponseWriter, r *http.Request) {
+func (a *api) folderItem(w http.ResponseWriter, r *http.Request, userID string) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/folders/")
 	// Node's /([^/]+)/ pattern never matches an empty or nested id.
 	if id == "" || strings.Contains(id, "/") {
@@ -173,7 +193,7 @@ func (a *api) folderItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case "PATCH":
-		if a.s.getFolder(id) == nil {
+		if a.s.getFolder(userID, id) == nil {
 			writeError(w, 404, "folder not found")
 			return
 		}
@@ -189,11 +209,11 @@ func (a *api) folderItem(w http.ResponseWriter, r *http.Request) {
 		}
 		parent := rawParent(body["parentId"])
 		if parent.Set && parent.Value != nil {
-			if *parent.Value == id || a.s.isSelfOrAncestor(id, *parent.Value) {
+			if *parent.Value == id || a.s.isSelfOrAncestor(userID, id, *parent.Value) {
 				writeError(w, 400, "cannot move a folder into itself or its descendant")
 				return
 			}
-			if a.s.getFolder(*parent.Value) == nil {
+			if a.s.getFolder(userID, *parent.Value) == nil {
 				writeError(w, 404, "parent folder not found")
 				return
 			}
@@ -203,14 +223,14 @@ func (a *api) folderItem(w http.ResponseWriter, r *http.Request) {
 			trimmed := strings.TrimSpace(*name)
 			namePtr = &trimmed
 		}
-		updated, err := a.s.updateFolder(id, namePtr, parent)
+		updated, err := a.s.updateFolder(userID, id, namePtr, parent)
 		if err != nil {
 			writeError(w, 400, err.Error())
 			return
 		}
 		writeJSON(w, 200, updated)
 	case "DELETE":
-		if a.s.deleteFolder(id) {
+		if a.s.deleteFolder(userID, id) {
 			writeJSON(w, 200, map[string]bool{"ok": true})
 		} else {
 			writeError(w, 404, "folder not found")
@@ -220,11 +240,11 @@ func (a *api) folderItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) diagrams(w http.ResponseWriter, r *http.Request) {
+func (a *api) diagrams(w http.ResponseWriter, r *http.Request, userID string) {
 	switch r.Method {
 	case "GET":
 		query := r.URL.Query()
-		writeJSON(w, 200, orEmpty(a.s.listDiagrams(diagramQuery{
+		writeJSON(w, 200, orEmpty(a.s.listDiagrams(userID, diagramQuery{
 			Favorite: query.Get("favorite") == "1",
 			FolderID: query.Get("folderId"),
 			Search:   query.Get("search"),
@@ -251,11 +271,11 @@ func (a *api) diagrams(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		folder := rawParent(body["folderId"])
-		if folder.Set && folder.Value != nil && a.s.getFolder(*folder.Value) == nil {
+		if folder.Set && folder.Value != nil && a.s.getFolder(userID, *folder.Value) == nil {
 			writeError(w, 404, "folder not found")
 			return
 		}
-		writeJSON(w, 201, a.s.createDiagram(diagramInput{
+		writeJSON(w, 201, a.s.createDiagram(userID, diagramInput{
 			FolderID:  folder.Value,
 			Name:      strings.TrimSpace(*name),
 			Positions: positions.Value,
@@ -266,7 +286,7 @@ func (a *api) diagrams(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
+func (a *api) diagramItem(w http.ResponseWriter, r *http.Request, userID string) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/diagrams/")
 	// Node's /([^/]+)/ pattern never matches an empty or nested id.
 	if id == "" || strings.Contains(id, "/") {
@@ -275,13 +295,13 @@ func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case "GET":
-		if d := a.s.getDiagram(id); d != nil {
+		if d := a.s.getDiagram(userID, id); d != nil {
 			writeJSON(w, 200, d)
 		} else {
 			writeError(w, 404, "diagram not found")
 		}
 	case "PATCH":
-		if a.s.getDiagram(id) == nil {
+		if a.s.getDiagram(userID, id) == nil {
 			writeError(w, 404, "diagram not found")
 			return
 		}
@@ -306,7 +326,7 @@ func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		folder := rawParent(body["folderId"])
-		if folder.Set && folder.Value != nil && a.s.getFolder(*folder.Value) == nil {
+		if folder.Set && folder.Value != nil && a.s.getFolder(userID, *folder.Value) == nil {
 			writeError(w, 404, "folder not found")
 			return
 		}
@@ -318,7 +338,7 @@ func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
 		if state != nil {
 			statePtr = state
 		}
-		patched, err := a.s.updateDiagram(id, diagramPatch{
+		patched, err := a.s.updateDiagram(userID, id, diagramPatch{
 			Favorite:  rawBool(body["favorite"]),
 			FolderID:  folder,
 			Name:      namePtr,
@@ -331,7 +351,7 @@ func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, patched)
 	case "DELETE":
-		if a.s.deleteDiagram(id) {
+		if a.s.deleteDiagram(userID, id) {
 			writeJSON(w, 200, map[string]bool{"ok": true})
 		} else {
 			writeError(w, 404, "diagram not found")
@@ -341,19 +361,19 @@ func (a *api) diagramItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) export(w http.ResponseWriter, r *http.Request) {
+func (a *api) export(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != "GET" {
 		a.notFound(w, r)
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"diagrams":   orEmpty(a.s.listAllDiagrams()),
+		"diagrams":   orEmpty(a.s.listAllDiagrams(userID)),
 		"exportedAt": now(),
-		"folders":    orEmpty(a.s.listFolders()),
+		"folders":    orEmpty(a.s.listFolders(userID)),
 	})
 }
 
-func (a *api) importEndpoint(w http.ResponseWriter, r *http.Request) {
+func (a *api) importEndpoint(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != "POST" {
 		a.notFound(w, r)
 		return
@@ -382,7 +402,7 @@ func (a *api) importEndpoint(w http.ResponseWriter, r *http.Request) {
 	// the whole request.
 	folders, skippedFolders := lenientFolders(foldersRaw)
 	diagrams, skippedDiagrams := lenientDiagrams(diagramsRaw)
-	result, err := a.s.importAll(importPayload{Diagrams: diagrams, Folders: folders})
+	result, err := a.s.importAll(userID, importPayload{Diagrams: diagrams, Folders: folders})
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return

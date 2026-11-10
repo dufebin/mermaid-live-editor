@@ -19,8 +19,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
+	secret, err := loadOrCreateSecret(dataDir)
+	if err != nil {
+		log.Fatalf("load jwt secret: %v", err)
+	}
 	log.Printf("storage API listening on http://%s:%s", host, port)
-	log.Fatal(http.ListenAndServe(host+":"+port, recoverWrap(newHandler(s))))
+	log.Fatal(http.ListenAndServe(host+":"+port, recoverWrap(newHandler(s, secret))))
 }
 
 // recoverWrap mirrors node's try/catch -> 400 with the error message.
