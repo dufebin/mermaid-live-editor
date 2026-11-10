@@ -50,6 +50,9 @@ func verifyPassword(password, stored string) bool {
 	if err != nil {
 		return false
 	}
+	if n != scryptN || r != scryptR || p != scryptP || len(want) != scryptKeyLen {
+		return false
+	}
 	got, err := scrypt.Key([]byte(password), salt, n, r, p, len(want))
 	if err != nil {
 		return false

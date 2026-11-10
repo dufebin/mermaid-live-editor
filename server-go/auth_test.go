@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +59,22 @@ func TestJWTVerificationFailures(t *testing.T) {
 	}
 	if _, ok := verifyJWT("not-a-jwt", secret, now); ok {
 		t.Fatal("malformed token must fail")
+	}
+}
+
+func TestVerifyPasswordRejectsPinnedParamMismatches(t *testing.T) {
+	salt := base64.StdEncoding.EncodeToString(make([]byte, 16))
+	hash := base64.StdEncoding.EncodeToString(make([]byte, scryptKeyLen))
+	for _, bad := range []string{
+		"scrypt$1024$8$1$" + salt + "$" + hash,                                                 // wrong N
+		"scrypt$32768$4$1$" + salt + "$" + hash,                                                // wrong r
+		"scrypt$32768$8$2$" + salt + "$" + hash,                                                // wrong p
+		"scrypt$32768$8$1$" + salt + "$",                                                       // empty hash part
+		"scrypt$32768$8$1$" + salt + "$" + base64.StdEncoding.EncodeToString(make([]byte, 16)), // wrong key length
+	} {
+		if verifyPassword("correct horse battery", bad) {
+			t.Fatalf("mismatched params must not verify: %q", bad)
+		}
 	}
 }
 
