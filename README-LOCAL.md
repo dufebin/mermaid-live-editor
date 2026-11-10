@@ -84,6 +84,17 @@ pnpm test:e2e:auth
 - 自带独立后端栈：每次运行先 `rm -rf server-data/e2e`，再用 `DATA_DIR=server-data/e2e PORT=18799` 启动一个新的 Go 存储服务，前端跑在 3100（`--strictPort`）。
 - **不碰真实数据**（`server-data/diagrams.db`）和 systemd 服务；与常驻的 3000/18790 互不影响。
 
+> ⚠️ **默认 e2e 套件（`pnpm test:e2e` / `pnpm test`）没有这种隔离**：它会复用常驻的 3000 前端、把 `/api` 代理到 18790 的真实库。套件夹具会注册 `e2e@example.com`——**若此时库里还没有任何用户**，该测试账号就会作为"首个注册者"静默认领全部真实图表/文件夹，之后本人再注册就只能拿到空库。涉及登录/账号的测试一律用 `pnpm test:e2e:auth`；默认套件要长期安全，应把 `playwright.config.ts` 的 webServer 改成指向一次性后端（做法同 auth 配置），建议后续跟进。
+>
+> 如果已经发生（发现 `e2e@example.com` 等测试账号占有了真实数据），在**本人尚未注册真实账号**时执行恢复（否则删用户会让该用户的数据变成无主孤儿）：
+>
+> ```sql
+> -- sqlite3 server-data/diagrams.db
+> UPDATE folders SET user_id = NULL;
+> UPDATE diagrams SET user_id = NULL;
+> DELETE FROM users;
+> ```
+
 ## 常见问题
 
 - **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
