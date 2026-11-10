@@ -136,6 +136,49 @@ func TestImportAll(t *testing.T) {
 	}
 }
 
+func TestUserMethods(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.createUser("dup@x.com", "h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.createUser("DUP@x.com", "h"); err == nil { // createUser lowercases; unique must fire
+		t.Fatal("duplicate email must fail")
+	}
+	if s.getUserByEmail("dup@x.com") == nil {
+		t.Fatal("get by email")
+	}
+	if s.countUsers() != 1 {
+		t.Fatalf("count: %d", s.countUsers())
+	}
+	if s.getPasswordHash("dup@x.com") != "h" {
+		t.Fatal("password hash lookup")
+	}
+}
+
+func TestClaimUnowned(t *testing.T) {
+	s := newTestStore(t)
+	s.db.Exec("INSERT INTO folders (id, name, parent_id, created_at, updated_at) VALUES ('legacy-f', 'Legacy', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')")
+	s.db.Exec("INSERT INTO diagrams (id, folder_id, name, state, favorite, positions, created_at, updated_at) VALUES ('legacy-d', 'legacy-f', 'L', 's', 0, NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')")
+
+	first, _ := s.createUser("first@x.com", "h")
+	if err := s.claimUnowned(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	s.db.QueryRow("SELECT user_id FROM folders WHERE id = 'legacy-f'").Scan(&owner)
+	if owner != first.ID {
+		t.Fatalf("first user must own legacy folder: %q", owner)
+	}
+	second, _ := s.createUser("second@x.com", "h")
+	if err := s.claimUnowned(second.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.db.QueryRow("SELECT user_id FROM folders WHERE id = 'legacy-f'").Scan(&owner)
+	if owner != first.ID {
+		t.Fatal("claim must be first-writer-wins")
+	}
+}
+
 func TestOpenDBIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	s1, err := openDB(dir)

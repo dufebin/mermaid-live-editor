@@ -4,6 +4,7 @@ import (
 	cryptorand "crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +15,13 @@ import (
 type NodeOffset struct {
 	Dx float64 `json:"dx"`
 	Dy float64 `json:"dy"`
+}
+
+// User is the public user shape; the password hash is never serialized.
+type User struct {
+	CreatedAt string `json:"createdAt"`
+	Email     string `json:"email"`
+	ID        string `json:"id"`
 }
 
 type Folder struct {
@@ -138,6 +146,12 @@ CREATE TABLE IF NOT EXISTS diagrams (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_diagrams_folder ON diagrams(folder_id);
 CREATE INDEX IF NOT EXISTS idx_diagrams_favorite ON diagrams(favorite);`
 	if _, err := d.Exec(schema); err != nil {
@@ -147,6 +161,13 @@ CREATE INDEX IF NOT EXISTS idx_diagrams_favorite ON diagrams(favorite);`
 	if _, err := d.Exec("ALTER TABLE diagrams ADD COLUMN positions TEXT"); err != nil {
 		if !strings.Contains(err.Error(), "duplicate column name") {
 			return nil, err
+		}
+	}
+	for _, table := range []string{"folders", "diagrams"} {
+		if _, err := d.Exec("ALTER TABLE " + table + " ADD COLUMN user_id TEXT REFERENCES users(id)"); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return nil, err
+			}
 		}
 	}
 	return s, nil
@@ -332,6 +353,69 @@ func (s *store) updateDiagram(id string, p diagramPatch) (*Diagram, error) {
 func (s *store) deleteDiagram(id string) bool {
 	res, err := s.db.Exec("DELETE FROM diagrams WHERE id = ?", id)
 	return err == nil && res != nil && rowsAffected(res) > 0
+}
+
+// --- users ---
+
+var errEmailExists = errors.New("email already registered")
+
+func (s *store) getUserByEmail(email string) *User {
+	row := s.db.QueryRow("SELECT id, email, created_at FROM users WHERE email = ?", strings.ToLower(email))
+	return scanUser(row)
+}
+
+func (s *store) getUser(id string) *User {
+	row := s.db.QueryRow("SELECT id, email, created_at FROM users WHERE id = ?", id)
+	return scanUser(row)
+}
+
+func (s *store) getPasswordHash(email string) string {
+	var hash string
+	s.db.QueryRow("SELECT password_hash FROM users WHERE email = ?", strings.ToLower(email)).Scan(&hash)
+	return hash
+}
+
+func (s *store) countUsers() int {
+	var n int
+	s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&n)
+	return n
+}
+
+func (s *store) createUser(email, passwordHash string) (User, error) {
+	email = strings.ToLower(email)
+	id := newUUID()
+	_, err := s.db.Exec("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)", id, email, passwordHash, now())
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return User{}, errEmailExists
+		}
+		return User{}, err
+	}
+	return *s.getUser(id), nil
+}
+
+// claimUnowned assigns every NULL-owner row to userID (first registration).
+func (s *store) claimUnowned(userID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("UPDATE folders SET user_id = ? WHERE user_id IS NULL", userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE diagrams SET user_id = ? WHERE user_id IS NULL", userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func scanUser(row interface{ Scan(...any) error }) *User {
+	var u User
+	if row.Scan(&u.ID, &u.Email, &u.CreatedAt) != nil {
+		return nil
+	}
+	return &u
 }
 
 func (s *store) importAll(payload importPayload) (importResult, error) {
