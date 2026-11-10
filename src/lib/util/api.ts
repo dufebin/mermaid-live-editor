@@ -6,6 +6,12 @@ export interface Folder {
   updatedAt: string;
 }
 
+export interface User {
+  createdAt: string;
+  email: string;
+  id: string;
+}
+
 export interface NodeOffset {
   dx: number;
   dy: number;
@@ -34,11 +40,40 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     ...init
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      onUnauthorized?.();
+    }
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
     throw new Error(body?.error ?? `API request failed (${response.status})`);
   }
   return (await response.json()) as T;
 };
+
+let onUnauthorized: (() => void) | undefined;
+export const setUnauthorizedHandler = (handler: () => void): void => {
+  onUnauthorized = handler;
+};
+
+const authRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(`/api/auth${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `API request failed (${response.status})`);
+  }
+  return (await response.json()) as T;
+};
+
+export const apiRegister = (email: string, password: string): Promise<User> =>
+  authRequest<User>('', { body: JSON.stringify({ email, password }), method: 'POST' });
+
+export const apiLogin = (email: string, password: string): Promise<User> =>
+  authRequest<User>('/login', { body: JSON.stringify({ email, password }), method: 'POST' });
+
+export const apiLogout = (): Promise<{ ok: boolean }> =>
+  authRequest<{ ok: boolean }>('/logout', { method: 'POST' });
 
 export const listFolders = (): Promise<Folder[]> => request<Folder[]>('/folders');
 
