@@ -12,6 +12,10 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   retries: process.env.CI ? 2 : 0,
   testDir: './tests',
+  // auth.spec.ts registers fresh users with no login fallback, so it only runs
+  // against the throwaway backend of `pnpm test:e2e:auth` (which wipes its
+  // DATA_DIR per run) — not against whatever backend this suite happens to use.
+  testIgnore: 'auth.spec.ts',
   use: {
     baseURL: 'http://localhost:3000',
     browserName: 'chromium',

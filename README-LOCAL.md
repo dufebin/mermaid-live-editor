@@ -67,6 +67,23 @@ pnpm dev
 | `.env`       | 默认配置；`MERMAID_IS_ENABLED_MERMAID_CHART_LINKS='false'` 已关商业 UI    | ✅ 入库       |
 | `.env.local` | AI 网关地址与密钥（`AI_PROXY_TARGET`/`AI_PROXY_KEY`）、`MERMAID_AI_MODEL` | ❌ gitignored |
 
+## 账号（登录 / 注册）
+
+- `/edit` 和 `/dashboard` 需要登录；未登录访问会跳到 `/login`（带 `?redirect=`，登录后原路返回）。`/view`、`/embed` 保持公开。
+- **首个注册的用户自动继承库里已有的全部图表/文件夹**（历史无主数据一次性划归首个注册者）；之后注册的用户从空库开始，相互完全隔离。
+- JWT 会话密钥自动生成并保存在 `<DATA_DIR>/jwt-secret`（默认 `server-data/jwt-secret`，32 字节随机数）。换密钥会使所有登录会话失效。
+- 可用环境变量 `MERMAID_JWT_SECRET` 覆盖文件密钥（优先级更高）。
+- 存储服务（18790）不启动时，登录接口不可用，前端会表现为注册/登录失败。
+
+### 账号相关 e2e 测试（隔离运行）
+
+```bash
+pnpm test:e2e:auth
+```
+
+- 自带独立后端栈：每次运行先 `rm -rf server-data/e2e`，再用 `DATA_DIR=server-data/e2e PORT=18799` 启动一个新的 Go 存储服务，前端跑在 3100（`--strictPort`）。
+- **不碰真实数据**（`server-data/diagrams.db`）和 systemd 服务；与常驻的 3000/18790 互不影响。
+
 ## 常见问题
 
 - **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
