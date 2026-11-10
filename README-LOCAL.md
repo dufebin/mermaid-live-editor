@@ -4,11 +4,11 @@
 
 ## 架构（3 个端口）
 
-| 服务       | 端口                      | 进程                                   | 说明                                                          |
-| ---------- | ------------------------- | -------------------------------------- | ------------------------------------------------------------- |
-| 前端编辑器 | **http://localhost:3000** | `pnpm dev`（vite）                     | 主入口，`/edit` 编辑、`/dashboard` 管理                       |
-| 存储服务   | 127.0.0.1:18790           | `pnpm server`（node server/index.mjs） | 图表/文件夹/位置的 REST API，数据落 `server-data/diagrams.db` |
-| LLM 网关   | 127.0.0.1:18780           | （外部已有，勿动）                     | deepseek-v4.1-flash，前端经 vite `/ai` 代理访问               |
+| 服务       | 端口                      | 进程                                             | 说明                                                          |
+| ---------- | ------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| 前端编辑器 | **http://localhost:3000** | `pnpm dev`（vite）                               | 主入口，`/edit` 编辑、`/dashboard` 管理                       |
+| 存储服务   | 127.0.0.1:18790           | `pnpm run server`（Go：`make -C server-go run`） | 图表/文件夹/位置的 REST API，数据落 `server-data/diagrams.db` |
+| LLM 网关   | 127.0.0.1:18780           | （外部已有，勿动）                               | deepseek-v4.1-flash，前端经 vite `/ai` 代理访问               |
 
 前端通过 vite 代理访问另两个服务（`/api` → 18790、`/ai` → 18780），浏览器只需访问 3000 一个端口。
 
@@ -24,9 +24,13 @@ pnpm dev:all        # 同时启动存储服务 + 前端
 ### 分开启动（两个终端）
 
 ```bash
-pnpm server         # 终端 1：存储服务（先启动）
-pnpm dev            # 终端 2：前端（首次含 embed 构建，约几分钟）
+pnpm run server   # 终端 1：存储服务（先启动）
+pnpm dev          # 终端 2：前端（首次含 embed 构建，约几分钟）
 ```
+
+> ⚠️ 必须写 `pnpm run server`，不能写 `pnpm server`——后者命中 pnpm 内建命令，静默退出 0，服务根本没启动。
+
+> 存储服务是 Go 写的（`server-go/`）。改了 Go 代码要先编译：`make -C server-go build`；`make -C server-go test` 跑 Go 测试。
 
 > 依赖变化后才需要 `pnpm install`；日常启动不需要。
 
@@ -36,9 +40,11 @@ pnpm dev            # 终端 2：前端（首次含 embed 构建，约几分钟�
 
 ```bash
 # 找到并停掉旧进程
-pkill -f "node server/index.mjs"
+pkill -f "server-go/bin/mermaid-storage"
 # 重新启动（后台常驻）
-pnpm server &       # 或 nohup pnpm server > /tmp/mermaid-storage.log 2>&1 &
+pnpm run server &   # 或 nohup pnpm run server > /tmp/mermaid-storage.log 2>&1 &
+# 生产环境（systemd）直接：
+sudo systemctl restart mermaid-storage
 ```
 
 SQLite 文件持久 + 迁移幂等，重启/升级代码后数据（图表、文件夹、节点位置）完整保留。
@@ -76,6 +82,9 @@ pnpm dev
 
 ## 管理命令：
 
-- systemctl status mermaid-live — 状态
-- journalctl -u mermaid-live -f — 日志
-- systemctl restart mermaid-live — 重启
+- systemctl status mermaid-live — 前端状态
+- journalctl -u mermaid-live -f — 前端日志
+- systemctl restart mermaid-live — 重启前端
+- systemctl status mermaid-storage — 存储服务状态（`/etc/systemd/system/mermaid-storage.service` 是指向本仓库 `systemd/` 的符号链接；ExecStart 直接跑 Go 二进制 `server-go/bin/mermaid-storage`，改代码后 `make -C server-go build` 再 restart）
+- journalctl -u mermaid-storage -f — 存储服务日志
+- systemctl restart mermaid-storage — 重启存储服务（数据不丢）

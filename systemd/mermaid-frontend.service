@@ -1,0 +1,16 @@
+[Unit]
+Description=mermaid-live-editor frontend (vite dev, http://localhost:3000)
+After=network.target mermaid-storage.service
+Wants=mermaid-storage.service
+
+[Service]
+Type=simple
+WorkingDirectory=/data/opensource/mermaid-live-editor
+ExecStart=/usr/bin/pnpm dev
+Restart=on-failure
+RestartSec=3
+# 首次启动含 embed 构建，可能需要几分钟
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

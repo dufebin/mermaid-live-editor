@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const children = [
-  spawn('node', ['server/index.mjs'], { stdio: 'inherit' }),
+  spawn('make', ['-C', 'server-go', 'run'], { stdio: 'inherit' }),
   spawn('pnpm', ['dev'], { stdio: 'inherit' })
 ];
 

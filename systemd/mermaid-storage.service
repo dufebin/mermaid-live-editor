@@ -1,0 +1,14 @@
+[Unit]
+Description=mermaid-live-editor storage API (SQLite, 127.0.0.1:18790)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/opensource/mermaid-live-editor
+# build with: make -C server-go build
+ExecStart=/data/opensource/mermaid-live-editor/server-go/bin/mermaid-storage
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
