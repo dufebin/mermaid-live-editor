@@ -367,20 +367,126 @@ func (a *api) importEndpoint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "folders and diagrams arrays are required")
 		return
 	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-	var payload importPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	var foldersRaw, diagramsRaw []json.RawMessage
+	if err := json.Unmarshal(body["folders"], &foldersRaw); err != nil {
 		writeError(w, 400, "Invalid JSON body")
 		return
 	}
-	result, err := a.s.importAll(payload)
+	if err := json.Unmarshal(body["diagrams"], &diagramsRaw); err != nil {
+		writeError(w, 400, "Invalid JSON body")
+		return
+	}
+	// Node's importAll reads elements as plain JS objects: a non-object element
+	// or a non-string id/name(/state) is skipped, and other field-type quirks
+	// (numeric favorite, non-object positions, ...) degrade instead of failing
+	// the whole request.
+	folders, skippedFolders := lenientFolders(foldersRaw)
+	diagrams, skippedDiagrams := lenientDiagrams(diagramsRaw)
+	result, err := a.s.importAll(importPayload{Diagrams: diagrams, Folders: folders})
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
+	result.Skipped += skippedFolders + skippedDiagrams
 	writeJSON(w, 200, result)
+}
+
+// jsonText extracts a JSON string field value; absent/null/non-string -> not ok.
+func jsonText(v json.RawMessage) (string, bool) {
+	if len(v) == 0 || string(v) == "null" {
+		return "", false
+	}
+	var s string
+	if json.Unmarshal(v, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// jsTruthy mirrors JS truthiness for JSON-decodable values: false, 0, "" and
+// absent/null are falsy; everything else (including objects and arrays) is truthy.
+func jsTruthy(v json.RawMessage) bool {
+	if len(v) == 0 || string(v) == "null" {
+		return false
+	}
+	var parsed any
+	if json.Unmarshal(v, &parsed) != nil {
+		return false
+	}
+	switch value := parsed.(type) {
+	case bool:
+		return value
+	case float64:
+		return value != 0
+	case string:
+		return value != ""
+	default:
+		return true
+	}
+}
+
+// lenientFolders decodes imported folder elements like node's isNonEmpty gate:
+// non-object elements and non-string (or blank) ids/names are skipped; other
+// type quirks degrade (parentId/createdAt/updatedAt become null/absent).
+func lenientFolders(items []json.RawMessage) ([]importFolder, int) {
+	out := make([]importFolder, 0, len(items))
+	skipped := 0
+	for _, item := range items {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) != nil {
+			skipped++
+			continue
+		}
+		id, okID := jsonText(fields["id"])
+		name, okName := jsonText(fields["name"])
+		if !okID || !okName || strings.TrimSpace(id) == "" || strings.TrimSpace(name) == "" {
+			skipped++
+			continue
+		}
+		f := importFolder{ID: id, Name: name}
+		if parent, ok := jsonText(fields["parentId"]); ok {
+			f.ParentID = &parent
+		}
+		f.CreatedAt, _ = jsonText(fields["createdAt"])
+		f.UpdatedAt, _ = jsonText(fields["updatedAt"])
+		out = append(out, f)
+	}
+	return out, skipped
+}
+
+// lenientDiagrams decodes imported diagram elements like node's isNonEmpty gate:
+// non-object elements and non-string (or blank) ids/names/states are skipped.
+// favorite uses JS truthiness (numeric 1 is favorite), and non-object (or
+// undecodable-offset) positions import as absent — observably identical to
+// node, which stores the raw value but reads it back as {}.
+func lenientDiagrams(items []json.RawMessage) ([]importDiagram, int) {
+	out := make([]importDiagram, 0, len(items))
+	skipped := 0
+	for _, item := range items {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) != nil {
+			skipped++
+			continue
+		}
+		id, okID := jsonText(fields["id"])
+		name, okName := jsonText(fields["name"])
+		state, okState := jsonText(fields["state"])
+		if !okID || !okName || !okState || strings.TrimSpace(id) == "" ||
+			strings.TrimSpace(name) == "" || strings.TrimSpace(state) == "" {
+			skipped++
+			continue
+		}
+		d := importDiagram{ID: id, Name: name, State: state, Favorite: jsTruthy(fields["favorite"])}
+		if folder, ok := jsonText(fields["folderId"]); ok {
+			d.FolderID = &folder
+		}
+		var positions map[string]NodeOffset
+		if json.Unmarshal(fields["positions"], &positions) == nil {
+			d.Positions = positions
+		}
+		d.CreatedAt, _ = jsonText(fields["createdAt"])
+		d.UpdatedAt, _ = jsonText(fields["updatedAt"])
+		out = append(out, d)
+	}
+	return out, skipped
 }

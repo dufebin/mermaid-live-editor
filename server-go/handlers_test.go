@@ -327,4 +327,30 @@ func TestExportImport(t *testing.T) {
 	if pos, ok := got["positions"].(map[string]any); !ok || pos["B"].(map[string]any)["dx"] != 3.0 {
 		t.Fatalf("imported positions: %v", got["positions"])
 	}
+
+	// Lenient import (node's per-item tolerance in db.mjs importAll): a numeric
+	// favorite still imports as favorite, a non-string id/name is skipped (not a
+	// 400), and a string positions value imports with effectively-empty positions.
+	lenient := `{"folders":[{"id":"fx","name":5}],` +
+		`"diagrams":[{"id":"L1","name":"L1","state":"s","favorite":1},` +
+		`{"id":123,"name":"L2","state":"s"},` +
+		`{"id":"L3","name":"L3","state":"s","positions":"x"}]}`
+	code, res = doReq(t, h, "POST", "/api/import", lenient)
+	if code != 200 || res["imported"] != float64(2) || res["skipped"] != float64(2) {
+		t.Fatalf("lenient import: %d %v", code, res)
+	}
+	code, got = doReq(t, h, "GET", "/api/diagrams/L1", "")
+	if code != 200 || got["favorite"] != true {
+		t.Fatalf("numeric favorite must import as favorite: %d %v", code, got)
+	}
+	code, got = doReq(t, h, "GET", "/api/diagrams/L3", "")
+	if code != 200 || got["favorite"] != false {
+		t.Fatalf("imported L3: %d %v", code, got)
+	}
+	if pos, ok := got["positions"].(map[string]any); !ok || len(pos) != 0 {
+		t.Fatalf("string positions must import as {}: %v", got["positions"])
+	}
+	if code, body := doReq(t, h, "GET", "/api/diagrams/123", ""); code != 404 {
+		t.Fatalf("non-string id must be skipped: %d %v", code, body)
+	}
 }
