@@ -19,7 +19,12 @@
   import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
   import { clearSelectedNode, selectedNode, setSelectedNode } from '$/util/selectedNode.svelte';
-  import { clearSelectedNodes, selectedNodes, setSelectedNodes } from '$/util/selectedNodes.svelte';
+  import {
+    clearSelectedNodes,
+    selectedNodes,
+    setSelectedNodes,
+    toggleSelectedNode
+  } from '$/util/selectedNodes.svelte';
   import Marquee from '$/components/Marquee.svelte';
   import { TID } from '$/constants';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
@@ -288,10 +293,11 @@
 
   let dragState:
     | {
-        baseDx: number;
-        baseDy: number;
+        baseOffsets: Record<string, NodeOffset>;
+        lastDx: number;
+        lastDy: number;
         moved: boolean;
-        name: string;
+        names: string[];
         startX: number;
         startY: number;
       }
@@ -347,13 +353,29 @@
     if (!(element instanceof SVGElement)) {
       return;
     }
-    applySelection([name]);
-    const base = nodePositions.value[name] ?? { dx: 0, dy: 0 };
+    if (event.shiftKey) {
+      // Toggle membership; shift+click never arms a drag.
+      toggleSelectedNode(name);
+      applySelection(selectedNodes.current);
+      return;
+    }
+    const current = selectedNodes.current;
+    // Dragging a member of a multi-selection drags the whole set; anything
+    // else collapses the selection to that node first.
+    const names = current.includes(name) && current.length > 1 ? current : [name];
+    if (!current.includes(name)) {
+      applySelection([name]);
+    }
+    const baseOffsets: Record<string, NodeOffset> = {};
+    for (const dragName of names) {
+      baseOffsets[dragName] = nodePositions.value[dragName] ?? { dx: 0, dy: 0 };
+    }
     dragState = {
-      baseDx: base.dx,
-      baseDy: base.dy,
+      baseOffsets,
+      lastDx: 0,
+      lastDy: 0,
       moved: false,
-      name,
+      names,
       startX: event.clientX,
       startY: event.clientY
     };
@@ -373,17 +395,24 @@
     }
     // Defensive fallback in case a stale NaN zoom survived another path.
     const zoom = Number.isFinite(nodePositions.zoom) ? nodePositions.zoom : 1;
-    const dx = dragState.baseDx + (event.clientX - dragState.startX) / zoom;
-    const dy = dragState.baseDy + (event.clientY - dragState.startY) / zoom;
-    if (dx === dragState.baseDx && dy === dragState.baseDy) {
+    const dx = (event.clientX - dragState.startX) / zoom;
+    const dy = (event.clientY - dragState.startY) / zoom;
+    if (dx === dragState.lastDx && dy === dragState.lastDy) {
       return;
     }
+    dragState.lastDx = dx;
+    dragState.lastDy = dy;
     panZoomState.isNodeDragging = true;
     dragState.moved = true;
-    for (const element of findNodeElements(dragState.name)) {
-      setElementOffset(element, dx, dy);
+    for (const name of dragState.names) {
+      const base = dragState.baseOffsets[name];
+      const nextDx = base.dx + dx;
+      const nextDy = base.dy + dy;
+      for (const element of findNodeElements(name)) {
+        setElementOffset(element, nextDx, nextDy);
+      }
+      setNodePosition(name, nextDx, nextDy);
     }
-    setNodePosition(dragState.name, dx, dy);
   };
 
   const onContainerMouseUp = (event?: MouseEvent) => {
@@ -398,21 +427,25 @@
     if (!dragState) {
       return;
     }
-    const { moved, name } = dragState;
+    const { moved, names } = dragState;
     dragState = undefined;
     panZoomState.isNodeDragging = false;
     if (moved) {
-      persistPositions(name);
+      persistPositions(names);
     }
   };
 
-  const persistPositions = (changedName: string) => {
+  const persistPositions = (changedNames: string[]) => {
     const diagram = currentDiagram.diagram;
     if (!diagram) {
       return; // unsaved diagram: positions stay in memory only
     }
     void updateDiagram(diagram.id, { positions: nodePositions.value }).catch((error) => {
-      notify(error instanceof Error ? error.message : `Failed to save position of ${changedName}`);
+      notify(
+        error instanceof Error
+          ? error.message
+          : `Failed to save positions of ${changedNames.join(', ')}`
+      );
     });
   };
 

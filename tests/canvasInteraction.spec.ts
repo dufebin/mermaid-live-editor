@@ -54,4 +54,54 @@ test.describe('Canvas interaction', () => {
     await page.mouse.click(view!.x + 5, view!.y + 5);
     await expect(page.locator('.visual-selected')).toHaveCount(0);
   });
+
+  test('shift+click toggles selection membership', async ({ editPage }) => {
+    const { page } = editPage;
+    await editPage.clearEditor();
+    await editPage.typeInEditor('flowchart LR\n A[Alpha] --> B[Beta]');
+    await editPage.checkTextInView('Beta');
+    const alpha = page.locator('#view .node').filter({ hasText: 'Alpha' });
+    const beta = page.locator('#view .node').filter({ hasText: 'Beta' });
+    await alpha.click();
+    await expect(page.locator('.visual-selected')).toHaveCount(1);
+    await beta.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.visual-selected')).toHaveCount(2);
+    await beta.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.visual-selected')).toHaveCount(1);
+  });
+
+  test('group drag moves selected nodes together', async ({ editPage }) => {
+    const { page } = editPage;
+    await editPage.clearEditor();
+    await editPage.typeInEditor('flowchart LR\n A[Alpha] --> B[Beta]');
+    await editPage.checkTextInView('Beta');
+    const view = await editPage.view.boundingBox();
+    expect(view).not.toBeNull();
+    // Marquee-select both nodes.
+    await page.mouse.move(view!.x + 5, view!.y + view!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(view!.x + view!.width - 5, view!.y + view!.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.locator('.visual-selected')).toHaveCount(2);
+
+    // Drag one of them; both must move by the same delta.
+    const alpha = page.locator('#view .node').filter({ hasText: 'Alpha' });
+    const beta = page.locator('#view .node').filter({ hasText: 'Beta' });
+    const box = await alpha.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 60, box!.y + box!.height / 2 + 40, {
+      steps: 5
+    });
+    await page.mouse.up();
+
+    const translateOf = (locator: import('@playwright/test').Locator) =>
+      locator.evaluate((element) => (element as SVGElement).style.translate);
+    const t1 = await translateOf(alpha);
+    const t2 = await translateOf(beta);
+    expect(t1).not.toBe('');
+    expect(t1).not.toBe('0px 0px');
+    expect(t1).toBe(t2);
+  });
 });
