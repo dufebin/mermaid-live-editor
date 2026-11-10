@@ -222,8 +222,11 @@
     highlightNames(names);
   };
 
-  // Marquee state. `marquee` is view-relative while active; `nodeRects` is a
-  // once-per-drag snapshot in page coordinates.
+  // Marquee state. Both `marquee` and the `nodeRects` snapshot use viewport
+  // (client) coordinates (clientX/Y and getBoundingClientRect); `marqueeRect`
+  // below is what translates the marquee into view-relative coordinates for
+  // the overlay. `nodeRects` is taken once per drag — nodes do not move
+  // during a marquee.
   let marquee = $state<{ curX: number; curY: number; startX: number; startY: number }>();
   let nodeRects: NodeRect[] = [];
 
@@ -415,14 +418,16 @@
     }
   };
 
-  const onContainerMouseUp = (event?: MouseEvent) => {
+  // Shared end-of-interaction handler for mouseup, mouseleave, and the
+  // window-level fallback below. Idempotent: finishMarquee() early-returns
+  // once the marquee is cleared and dragState is unset here, so a release
+  // that reaches several of these paths only acts once.
+  const onContainerMouseUp = (event: MouseEvent) => {
     isPanning = false;
     if (marquee) {
-      if (event) {
-        finishMarquee(event);
-      } else {
-        cancelMarquee(); // mouseleave: abort without changing the selection
-      }
+      // Both mouseup and mouseleave finalize the marquee with the current
+      // pointer (client) coordinates; there is no abort path.
+      finishMarquee(event);
     }
     if (!dragState) {
       return;
@@ -433,6 +438,20 @@
     if (moved) {
       persistPositions(names);
     }
+  };
+
+  // While a mouse button is held, browsers suppress boundary events for the
+  // mousedown target's ancestors, so dragging the marquee past the browser
+  // window edge and releasing there fires neither mouseup nor mouseleave on
+  // the container — the marquee would survive with no button held. This
+  // window-level fallback finishes any armed interaction; when the release
+  // happened inside the container, onContainerMouseUp has already run there
+  // and this call is a harmless no-op.
+  const onWindowMouseUp = (event: MouseEvent) => {
+    if (!editable) {
+      return; // /view never arms a marquee or node drag
+    }
+    onContainerMouseUp(event);
   };
 
   const persistPositions = (changedNames: string[]) => {
@@ -657,7 +676,11 @@
   {/if}
 </div>
 
-<svelte:window onblur={onWindowBlur} onkeydown={onWindowKeyDown} onkeyup={onWindowKeyUp} />
+<svelte:window
+  onblur={onWindowBlur}
+  onkeydown={onWindowKeyDown}
+  onkeyup={onWindowKeyUp}
+  onmouseup={onWindowMouseUp} />
 
 <style>
   .grid-bg-light {

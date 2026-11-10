@@ -4,6 +4,7 @@
   import { editDiagramWithAI } from '$/util/ai';
   import { notify } from '$/util/notify';
   import { clearSelectedNode, selectedNode } from '$/util/selectedNode.svelte';
+  import { clearSelectedNodes } from '$/util/selectedNodes.svelte';
   import { updateCode, validatedState } from '$/util/state.svelte';
   import { tick } from 'svelte';
   import SendIcon from '~icons/material-symbols/send-rounded';
@@ -35,7 +36,10 @@
       const newCode = await editDiagramWithAI(instructionWithContext, validatedState.current.code);
       updateCode(newCode);
       input = '';
+      // Drop the whole selection: with a multi-selection active the AI rewrite
+      // may rename nodes, so stale names must not survive the re-render.
       clearSelectedNode();
+      clearSelectedNodes();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'AI request failed');
     } finally {
