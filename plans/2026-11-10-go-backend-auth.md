@@ -1040,7 +1040,7 @@ The existing e2e suite never touches the storage API, so Phase A's real acceptan
 
 **Interfaces:**
 
-- Consumes: `server/index.mjs` (port 18790, `DATA_DIR=server-data/parity-node`), Go binary (port 18791, `DATA_DIR=server-data/parity-go`).
+- Consumes: `server/index.mjs` (port **28790** — as-built: 18790 is occupied by the live systemd `mermaid-storage` service and must not be touched, `DATA_DIR=server-data/parity-node`), Go binary (port **28791**, `DATA_DIR=server-data/parity-go`). As-built harness fixes vs the plan's code: refs are captured from the RAW (pre-normalization) response bodies — capturing from normalized bodies would make every templated request 404 identically on both servers (false parity); corpus order keeps all `{{...}}` sources (GET list responses) ahead of their uses, and an unresolved template now throws instead of silently expanding to `''`.
 - Produces: `pnpm parity` — exit 0 iff all responses match (UUIDs and ISO timestamps normalized).
 
 - [ ] **Step 1: Write the harness**
