@@ -50,6 +50,54 @@
     | { height: number; left: number; name: string; top: number; value: string; width: number }
     | undefined = $state();
 
+  let isSpacePressed = $state(false);
+  let isPanning = $state(false);
+
+  // Space must keep typing normally inside editors and inputs.
+  const isEditableTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+    return (
+      target.closest('input, textarea, [contenteditable="true"], .monaco-editor, .cm-editor') !==
+      null
+    );
+  };
+
+  const onWindowKeyDown = (event: KeyboardEvent) => {
+    if (event.code === 'Space') {
+      if (event.repeat || isEditableTarget(event.target)) {
+        return;
+      }
+      // Prevent page scroll / button activation while space-panning.
+      event.preventDefault();
+      isSpacePressed = true;
+      return;
+    }
+    if (event.key !== 'Escape') {
+      return;
+    }
+    if (editingLabel) {
+      editingLabel = undefined;
+      return;
+    }
+    clearSelectedNode();
+    highlight(undefined);
+  };
+
+  const onWindowKeyUp = (event: KeyboardEvent) => {
+    if (event.code === 'Space') {
+      isSpacePressed = false;
+      isPanning = false;
+    }
+  };
+
+  const onWindowBlur = () => {
+    // Never get stuck in pan mode after alt-tab.
+    isSpacePressed = false;
+    isPanning = false;
+  };
+
   // Set up panZoom state observer to update the store when pan/zoom changes
   const setupPanZoomObserver = () => {
     panZoomState.onPanZoomChange = (pan, zoomValue) => {
@@ -170,16 +218,50 @@
       }
     | undefined;
 
+  // Capture phase: decide who owns this mousedown BEFORE svg-pan-zoom's own
+  // (bubble-phase, svg-element) listener sees it. stopPropagation() here keeps
+  // the event from ever reaching the SVG, so empty-space drags cannot pan.
+  // Note: this also suppresses our own bubble-phase onmousedown for that event.
+  const onContainerMouseDownCapture = (event: MouseEvent) => {
+    if (event.button !== 0) {
+      return;
+    }
+    if (isSpacePressed) {
+      isPanning = true;
+      return; // let svg-pan-zoom pan (anywhere, including over nodes)
+    }
+    if (!editable) {
+      return; // /view keeps plain-drag pan
+    }
+    if (findNodeName(event.target)) {
+      return; // node path — handled by onContainerMouseDown
+    }
+    event.stopPropagation();
+    // Task 4 starts the marquee here.
+  };
+
+  // Chrome also fires a pointerdown for every mousedown, and Hammerjs listens
+  // for pointerdown on the SVG (panZoom.ts's customEventsHandler) — gating
+  // mousedown alone still lets Hammer pan on plain empty-canvas drags. Gate
+  // mouse pointerdown through the same path; touch pointerdown must pass so
+  // the Hammer touch pinch/pan path keeps working.
+  const onContainerPointerDownCapture = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse') {
+      return;
+    }
+    onContainerMouseDownCapture(event);
+  };
+
   const onContainerMouseDown = (event: MouseEvent) => {
     // Only the primary button selects/drags; right/middle clicks must not
     // arm dragState or steal the selection.
-    if (event.button !== 0) {
+    if (event.button !== 0 || isSpacePressed) {
       return;
     }
     const name = findNodeName(event.target);
     if (!name) {
-      clearSelectedNode();
-      highlight(undefined);
+      // Unreachable for plain left-clicks (capture gate stops the event) but
+      // kept as a safe no-op for any path that slips through.
       return;
     }
     const element = (event.target as Element).closest(NODE_SELECTOR);
@@ -223,6 +305,7 @@
   };
 
   const onContainerMouseUp = () => {
+    isPanning = false;
     if (!dragState) {
       return;
     }
@@ -404,7 +487,9 @@
   class={[
     'relative h-full w-full',
     shouldShowGrid && `grid-bg-${mode.current}`,
-    error && 'opacity-50'
+    error && 'opacity-50',
+    isSpacePressed && !isPanning && 'cursor-grab',
+    isPanning && 'cursor-grabbing'
   ]}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -412,6 +497,8 @@
     bind:this={container}
     class="h-full overflow-auto"
     ondblclick={editable ? onContainerDblClick : undefined}
+    onmousedowncapture={onContainerMouseDownCapture}
+    onpointerdowncapture={onContainerPointerDownCapture}
     onmousedown={editable ? onContainerMouseDown : undefined}
     onmousemove={editable ? onContainerMouseMove : undefined}
     onmouseup={editable ? onContainerMouseUp : undefined}
@@ -428,18 +515,7 @@
   {/if}
 </div>
 
-<svelte:window
-  onkeydown={(event) => {
-    if (event.key !== 'Escape') {
-      return;
-    }
-    if (editingLabel) {
-      editingLabel = undefined;
-      return;
-    }
-    clearSelectedNode();
-    highlight(undefined);
-  }} />
+<svelte:window onblur={onWindowBlur} onkeydown={onWindowKeyDown} onkeyup={onWindowKeyUp} />
 
 <style>
   .grid-bg-light {
