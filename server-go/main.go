@@ -15,6 +15,7 @@ func envOr(key, fallback string) string {
 
 func main() {
 	host, port, dataDir := envOr("HOST", "127.0.0.1"), envOr("PORT", "18790"), envOr("DATA_DIR", "server-data")
+	staticDir := envOr("STATIC_DIR", "")
 	s, err := openDB(dataDir)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -23,8 +24,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("load jwt secret: %v", err)
 	}
-	log.Printf("storage API listening on http://%s:%s", host, port)
-	log.Fatal(http.ListenAndServe(host+":"+port, recoverWrap(newHandler(s, secret))))
+	var handler http.Handler = newHandler(s, secret)
+	if staticDir != "" {
+		handler = staticHandler(staticDir, handler)
+	}
+	log.Printf("storage API listening on http://%s:%s (static: %s)", host, port, staticDirOrNone(staticDir))
+	log.Fatal(http.ListenAndServe(host+":"+port, recoverWrap(handler)))
 }
 
 // recoverWrap mirrors node's try/catch -> 400 with the error message.
