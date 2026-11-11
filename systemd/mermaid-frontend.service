@@ -1,16 +1,17 @@
 [Unit]
-Description=mermaid-live-editor frontend (vite dev, http://localhost:3000)
-After=network.target mermaid-storage.service
-Wants=mermaid-storage.service
+Description=mermaid-live-editor production (Go static + API, 0.0.0.0:3000)
+After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/data/opensource/mermaid-live-editor
-ExecStart=/usr/bin/pnpm dev
+# build with: pnpm build:prod
+ExecStart=/data/opensource/mermaid-live-editor/server-go/bin/mermaid-storage
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+Environment=STATIC_DIR=docs
 Restart=on-failure
 RestartSec=3
-# 首次启动含 embed 构建，可能需要几分钟
-TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target

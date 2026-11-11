@@ -95,6 +95,50 @@ pnpm test:e2e:auth
 > DELETE FROM users;
 > ```
 
+## 生产部署（编译版）
+
+生产模式用单个 Go 进程同时提供静态前端（`docs/`，vite 构建产物）和存储 API，监听 `0.0.0.0:3000`，不再需要 vite dev server。
+
+### 构建产物
+
+```bash
+pnpm build:prod   # 产出 docs/（vite 静态站点）+ server-go/bin/mermaid-storage（Go 二进制）
+```
+
+### 首次切换（从 dev 模式到生产模式）
+
+```bash
+sudo systemctl stop mermaid-storage
+sudo systemctl stop mermaid-live 2>/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now mermaid-frontend
+```
+
+### 验证
+
+```bash
+curl -s localhost:3000/edit | head -c 200        # 应返回 SPA HTML
+curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unauthorized"}
+```
+
+> ⚠️ **生产运行时禁止 `mermaid-storage`（18790）同时运行**——两个进程双写同一个 SQLite 文件会损坏数据。生产单元（`systemd/mermaid-frontend.service`）因此不依赖 `Wants=mermaid-storage.service`，`STATIC_DIR=docs` 让同一个二进制直接服务前端。
+
+### 切换回开发模式
+
+```bash
+sudo systemctl stop mermaid-frontend
+# 起存储服务 + vite dev（vite 把 /api 代理到 18790）：
+sudo systemctl start mermaid-storage
+pnpm dev
+```
+
+### 更新流程（改代码后上线）
+
+```bash
+pnpm build:prod
+sudo systemctl restart mermaid-frontend   # 数据不丢：SQLite 文件持久 + 迁移幂等
+```
+
 ## 常见问题
 
 - **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
