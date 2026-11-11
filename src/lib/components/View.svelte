@@ -15,6 +15,7 @@
     setZoom
   } from '$/util/nodePositions.svelte';
   import { PanZoomState } from '$/util/panZoom';
+  import { handTool, setHandTool, toggleHandTool } from '$/util/handTool.svelte';
   import { renderAndPlaceDiagram } from '$/util/renderView';
   import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
@@ -83,6 +84,13 @@
       cancelMarquee();
       return;
     }
+    if (event.key === 'h' && !event.repeat && editable && !isEditableTarget(event.target)) {
+      // H toggles the hand (pan) tool, mirroring the toolbar button.
+      event.preventDefault();
+      toggleHandTool();
+      cancelMarquee();
+      return;
+    }
     if (event.key !== 'Escape') {
       return;
     }
@@ -90,6 +98,7 @@
       editingLabel = undefined;
       return;
     }
+    setHandTool(false);
     clearSelectedNode();
     clearSelectedNodes();
     highlightNames([]);
@@ -314,7 +323,7 @@
     if (event.button !== 0) {
       return;
     }
-    if (isSpacePressed) {
+    if (isSpacePressed || handTool.active) {
       isPanning = true;
       return; // let svg-pan-zoom pan (anywhere, including over nodes)
     }
@@ -343,7 +352,7 @@
   const onContainerMouseDown = (event: MouseEvent) => {
     // Only the primary button selects/drags; right/middle clicks must not
     // arm dragState or steal the selection.
-    if (event.button !== 0 || isSpacePressed) {
+    if (event.button !== 0 || isSpacePressed || handTool.active) {
       return;
     }
     const name = findNodeName(event.target);
@@ -646,7 +655,7 @@
     'relative h-full w-full',
     shouldShowGrid && `grid-bg-${mode.current}`,
     error && 'opacity-50',
-    isSpacePressed && !isPanning && 'cursor-grab',
+    (isSpacePressed || handTool.active) && !isPanning && 'cursor-grab',
     isPanning && 'cursor-grabbing'
   ]}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->

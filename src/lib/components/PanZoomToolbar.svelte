@@ -2,9 +2,12 @@
   import FloatingToolbar from '$/components/FloatingToolbar.svelte';
   import { Button } from '$/components/ui/button';
   import { Separator } from '$/components/ui/separator';
+  import { TID } from '$/constants';
+  import { handTool, toggleHandTool } from '$/util/handTool.svelte';
   import type { PanZoomState } from '$/util/panZoom';
   import ExpandIcon from '~icons/material-symbols/open-in-full-rounded';
   import ArrowsToCircleIcon from '~icons/material-symbols/screenshot-frame-2';
+  import HandIcon from '~icons/material-symbols/back-hand';
   import MagnifyingGlassPlusIcon from '~icons/material-symbols/zoom-in';
   import MagnifyingGlassMinusIcon from '~icons/material-symbols/zoom-out';
 
@@ -24,6 +27,17 @@
 </script>
 
 <FloatingToolbar>
+  <Button
+    variant="ghost"
+    size="icon"
+    class={handTool.active ? 'bg-accent/20 text-accent' : undefined}
+    data-testid={TID.handTool}
+    title={handTool.active ? 'Hand tool (click or press H to exit)' : 'Hand tool — drag to pan (H)'}
+    aria-pressed={handTool.active}
+    onclick={toggleHandTool}>
+    <HandIcon />
+  </Button>
+  <Separator orientation="vertical" />
   <Button variant="ghost" size="icon" title="Reset view" onclick={() => panZoomState.reset()}>
     <ArrowsToCircleIcon />
   </Button>

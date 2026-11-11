@@ -104,4 +104,41 @@ test.describe('Canvas interaction', () => {
     expect(t1).not.toBe('0px 0px');
     expect(t1).toBe(t2);
   });
+
+  test('hand tool toggles pan mode on and off', async ({ editPage }) => {
+    const { page } = editPage;
+    await editPage.checkTextInView('Christmas');
+    const view = await editPage.view.boundingBox();
+    expect(view).not.toBeNull();
+
+    // Activate: plain empty-canvas drag pans (no marquee), like space-pan.
+    await page.getByTestId('hand-tool').click();
+    const before = await viewportTransform(page);
+    await page.mouse.move(view!.x + 100, view!.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(view!.x + 200, view!.y + 180, { steps: 5 });
+    await page.mouse.up();
+    const afterPan = await viewportTransform(page);
+    expect(afterPan).not.toBe(before);
+
+    // Deactivate: the same drag no longer pans (back to marquee mode).
+    await page.getByTestId('hand-tool').click();
+    const before2 = await viewportTransform(page);
+    await page.mouse.move(view!.x + 100, view!.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(view!.x + 200, view!.y + 180, { steps: 5 });
+    await page.mouse.up();
+    expect(await viewportTransform(page)).toBe(before2);
+
+    // H key toggles it too (and Escape turns it off).
+    await page.keyboard.press('h');
+    const before3 = await viewportTransform(page);
+    await page.mouse.move(view!.x + 100, view!.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(view!.x + 180, view!.y + 150, { steps: 5 });
+    await page.mouse.up();
+    expect(await viewportTransform(page)).not.toBe(before3);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('hand-tool')).toHaveAttribute('aria-pressed', 'false');
+  });
 });
