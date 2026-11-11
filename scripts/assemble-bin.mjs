@@ -9,4 +9,4 @@ if (existsSync(`${bin}/static`)) {
   renameSync(`${bin}/static`, `${bin}/static.prev`);
 }
 cpSync(`${ROOT}docs`, `${bin}/static`, { recursive: true });
-console.log('bin/ assembled: mermaid-storage + static/ (previous generation at static.prev)');
+console.log('bin/ assembled: mermaid-server + static/ (previous generation at static.prev)');

@@ -39,12 +39,12 @@ pnpm dev          # 终端 2：前端（首次含 embed 构建，约几分钟）
 ### 重启存储服务（数据不丢）
 
 ```bash
-# 找到并停掉旧进程
-pkill -f "server-go/bin/mermaid-storage"
+# 停掉旧进程（开发模式的手动实例）
+pkill -f "bin/mermaid-server"
 # 重新启动（后台常驻）
-pnpm run server &   # 或 nohup pnpm run server > /tmp/mermaid-storage.log 2>&1 &
+nohup make -C server-go run > /tmp/mermaid-server.log 2>&1 &
 # 生产环境（systemd）直接：
-sudo systemctl restart mermaid-storage
+sudo systemctl restart mermaid-server
 ```
 
 SQLite 文件持久 + 迁移幂等，重启/升级代码后数据（图表、文件夹、节点位置）完整保留。
@@ -97,7 +97,7 @@ pnpm test:e2e:auth
 
 ## 生产部署（编译版）
 
-生产模式用单个 Go 进程同时提供静态前端（`bin/static/`）和存储 API，监听 `0.0.0.0:3000`，不再需要 vite dev server。
+生产模式用单个 Go 进程（`bin/mermaid-server`）同时提供静态前端（`bin/static/`）和存储 API，监听 `0.0.0.0:3000`，不再需要 vite dev server。服务名：**`mermaid-server`**。
 
 ### 构建产物
 
@@ -105,49 +105,68 @@ pnpm test:e2e:auth
 
 ```
 bin/
-  mermaid-storage   # Go 二进制（API + 静态服务）
+  mermaid-server    # Go 二进制（API + 静态服务）
   static/           # 前端静态文件（从 docs/ 组装，供 STATIC_DIR 使用）
   static.prev/      # 上一代前端（保留一代，用于回滚；可随时删）
 ```
 
 ```bash
-pnpm build:prod   # pnpm build（写 docs/）→ make build（写 bin/mermaid-storage）→ 组装 bin/static/
+pnpm build:prod   # pnpm build（写 docs/）→ make build（写 bin/mermaid-server）→ 组装 bin/static/
 ```
 
 > `pnpm build` 的输出目录仍是 `docs/`（上游/Docker/Pages 约定不变）；`docs/` 只是构建中间产物，可随时删除回收空间。
+
+### 安装 / 更新（一键）
+
+```bash
+bash install.sh
+```
+
+`install.sh` 做完所有事：构建 → 清理废弃单元（`mermaid-frontend`/`mermaid-storage`/`mermaid-live`）→ 安装 `mermaid-server` 单元（符号链接到仓库的 `systemd/mermaid-server.service`）→ enable + restart → 验证 `:3000` 页面与 401 门禁。首次安装和日常更新用同一条命令（幂等；构建期间线上仍服务旧的 `bin/static`，前端零停机）。
 
 ### 启动方式
 
 **systemd（生产标准方式）**：
 
 ```bash
-sudo systemctl start mermaid-frontend      # 启动
-sudo systemctl restart mermaid-frontend    # 重启（更新后生效）
-sudo systemctl status mermaid-frontend     # 状态
-journalctl -u mermaid-frontend -f          # 看日志
+sudo systemctl start mermaid-server      # 启动
+sudo systemctl restart mermaid-server    # 重启（更新后生效）
+sudo systemctl status mermaid-server     # 状态
+journalctl -u mermaid-server -f          # 看日志
 ```
 
-**手动一次性运行（调试用）**——⚠️ 必须先停掉 systemd 生产单元，否则两个进程双写同一个 SQLite：
+**手动一次性运行（调试用）**——⚠️ 必须先停掉生产单元，否则两个进程双写同一个 SQLite：
 
 ```bash
-sudo systemctl stop mermaid-frontend
+sudo systemctl stop mermaid-server
 cd /data/opensource/mermaid-live-editor
-HOST=0.0.0.0 PORT=3000 STATIC_DIR=bin/static DATA_DIR=server-data ./bin/mermaid-storage
-# Ctrl+C 结束；结束后 sudo systemctl start mermaid-frontend 恢复生产
+HOST=0.0.0.0 PORT=3000 \
+STATIC_DIR=/data/opensource/mermaid-live-editor/bin/static \
+DATA_DIR=/data/opensource/mermaid-live-editor/server-data \
+./bin/mermaid-server
+# Ctrl+C 结束；结束后 sudo systemctl start mermaid-server 恢复生产
 ```
 
-### 首次切换（从 dev 模式到生产模式）
+> 环境变量一律用绝对路径（systemd 单元同样如此），避免在别的目录运行时静默创建新的空 SQLite + 新 JWT 密钥。
+
+### 开发模式（调试）
+
+开发不用任何 systemd 单元，两个终端：
 
 ```bash
-sudo systemctl stop mermaid-storage
-sudo systemctl stop mermaid-live 2>/dev/null
-sudo systemctl stop mermaid-frontend 2>/dev/null  # 已在跑的旧实例不会随 daemon-reload 重启，必须显式停掉
-sudo systemctl disable mermaid-live               # 防止重启后与生产单元抢 3000 端口
-sudo systemctl disable mermaid-storage            # 防止重启后 18790 回来，与生产进程双写 SQLite
-# disable 会把 /etc 里的 storage 符号链接一并删掉，补回以保持"已注册、未启用"（开发模式仍可手动 start）：
-sudo ln -sf /data/opensource/mermaid-live-editor/systemd/mermaid-storage.service /etc/systemd/system/mermaid-storage.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now mermaid-frontend
+# 终端 1：存储 API（127.0.0.1:18790，纯 API 模式；make run 从仓库根启动，DATA_DIR 默认 server-data）
+make -C server-go run
+
+# 终端 2：前端（vite dev，:3000，/api 自动代理到 18790）
+pnpm dev
+```
+
+⚠️ **开发前先停生产单元**（18790 的手动实例与 :3000 的生产进程双写同一个 SQLite 会损坏数据）：
+
+```bash
+sudo systemctl stop mermaid-server
+# ……开发完成后恢复生产：
+sudo systemctl start mermaid-server
 ```
 
 ### 验证
@@ -157,42 +176,14 @@ curl -s localhost:3000/edit | head -c 200        # 应返回 SPA HTML
 curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unauthorized"}
 ```
 
-> ⚠️ **生产运行时禁止 `mermaid-storage`（18790）同时运行**——两个进程双写同一个 SQLite 文件会损坏数据。生产单元（`systemd/mermaid-frontend.service`）因此不依赖 `Wants=mermaid-storage.service`，`STATIC_DIR=bin/static` 让同一个二进制直接服务前端。
-
 > 注意：**AI 编辑在生产模式下暂不可用**（Go 未代理 `/ai` 网关，待后续补齐）。下文"常见问题"里的 AI 排查步骤仅适用于开发模式。
 
-### 切换回开发模式
-
-```bash
-sudo systemctl stop mermaid-frontend
-sudo systemctl disable mermaid-frontend  # 防止开发期间重启机器把生产进程带回来，与 18790 双写 SQLite
-# 起存储服务 + vite dev（vite 把 /api 代理到 18790）：
-sudo systemctl start mermaid-storage
-pnpm dev
-```
-
-> 开发模式期间 `mermaid-live` 和 `mermaid-frontend` 均已停止并 disable，重启机器也不会有任何服务抢 3000 端口或双写 SQLite。
-
-### 回到生产模式（与首次切换对称）
-
-```bash
-sudo systemctl stop mermaid-storage     # 必须先停，避免双写 SQLite
-sudo systemctl enable --now mermaid-frontend
-```
-
-### 更新流程（改代码后上线）
-
-```bash
-pnpm build:prod
-sudo systemctl restart mermaid-frontend   # 数据不丢：SQLite 文件持久 + 迁移幂等
-```
-
-> 前端零停机：构建写 `docs/`、线上始终服务旧的 `bin/static/`，组装换新后才由 restart 生效。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart（`go build -o` 对运行中的二进制安全替换）。回滚前端 = 把 `bin/static.prev` 换回 `bin/static` 后 restart。
+> 回滚前端 = 把 `bin/static.prev` 换回 `bin/static` 后 restart。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart（`go build -o` 对运行中的二进制安全替换）。
 
 ## 常见问题
 
 - **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
-- **存储服务起不来**：看日志 `/tmp/mermaid-storage.log`（若用 nohup 启动）
+- **存储服务起不来**：看日志 `/tmp/mermaid-server.log`（若用 nohup 启动）
 - **AI 编辑无响应**：先确认网关活着 `curl http://127.0.0.1:18780/v1/models -H "Authorization: Bearer <key>"`，再确认存储/前端代理正常 `curl http://localhost:3000/api/folders`
 - **备份图表**：拷走 `server-data/diagrams.db` 即可；或在 Dashboard 里用 Export 导出 JSON
 
@@ -204,9 +195,7 @@ sudo systemctl restart mermaid-frontend   # 数据不丢：SQLite 文件持久 +
 
 ## 管理命令：
 
-- systemctl status mermaid-live — 前端状态
-- journalctl -u mermaid-live -f — 前端日志
-- systemctl restart mermaid-live — 重启前端
-- systemctl status mermaid-storage — 存储服务状态（`/etc/systemd/system/mermaid-storage.service` 是指向本仓库 `systemd/` 的符号链接；ExecStart 直接跑 Go 二进制 `server-go/bin/mermaid-storage`，改代码后 `make -C server-go build` 再 restart）
-- journalctl -u mermaid-storage -f — 存储服务日志
-- systemctl restart mermaid-storage — 重启存储服务（数据不丢）
+- systemctl status mermaid-server — 服务状态
+- journalctl -u mermaid-server -f — 服务日志
+- systemctl restart mermaid-server — 重启生产服务（数据不丢；改代码后 `bash install.sh` 一键上线）
+- 日常更新：`bash install.sh`（构建 + 单元安装 + 重启 + 验证，幂等）

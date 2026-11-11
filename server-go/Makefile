@@ -1,4 +1,4 @@
-BIN := ../bin/mermaid-storage
+BIN := ../bin/mermaid-server
 
 .PHONY: build run test vet
 

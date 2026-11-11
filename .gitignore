@@ -7,6 +7,7 @@
 /coverage
 /docs
 # Compiled deployment artifacts (bin/ also hosts tracked upstream scripts)
+/bin/mermaid-server
 /bin/mermaid-storage
 /bin/static/
 /bin/static.prev/
