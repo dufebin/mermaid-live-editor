@@ -110,6 +110,11 @@ pnpm build:prod   # 产出 docs/（vite 静态站点）+ server-go/bin/mermaid-s
 ```bash
 sudo systemctl stop mermaid-storage
 sudo systemctl stop mermaid-live 2>/dev/null
+sudo systemctl stop mermaid-frontend 2>/dev/null  # 已在跑的旧实例不会随 daemon-reload 重启，必须显式停掉
+sudo systemctl disable mermaid-live               # 防止重启后与生产单元抢 3000 端口
+sudo systemctl disable mermaid-storage            # 防止重启后 18790 回来，与生产进程双写 SQLite
+# disable 会把 /etc 里的 storage 符号链接一并删掉，补回以保持"已注册、未启用"（开发模式仍可手动 start）：
+sudo ln -sf /data/opensource/mermaid-live-editor/systemd/mermaid-storage.service /etc/systemd/system/mermaid-storage.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now mermaid-frontend
 ```
@@ -123,6 +128,8 @@ curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unaut
 
 > ⚠️ **生产运行时禁止 `mermaid-storage`（18790）同时运行**——两个进程双写同一个 SQLite 文件会损坏数据。生产单元（`systemd/mermaid-frontend.service`）因此不依赖 `Wants=mermaid-storage.service`，`STATIC_DIR=docs` 让同一个二进制直接服务前端。
 
+> 注意：**AI 编辑在生产模式下暂不可用**（Go 未代理 `/ai` 网关，待后续补齐）。下文"常见问题"里的 AI 排查步骤仅适用于开发模式。
+
 ### 切换回开发模式
 
 ```bash
@@ -131,6 +138,8 @@ sudo systemctl stop mermaid-frontend
 sudo systemctl start mermaid-storage
 pnpm dev
 ```
+
+> 开发模式期间 `mermaid-live` 和 `mermaid-frontend` 保持停止；两者已 disable，重启机器也不会回来抢 3000 端口。
 
 ### 更新流程（改代码后上线）
 
