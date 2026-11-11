@@ -29,6 +29,7 @@
   import { updateDiagram } from '$/util/api';
   import { fetchMe } from '$/util/auth.svelte';
   import { currentDiagram, setCurrentDiagram } from '$/util/currentDiagram.svelte';
+  import { triggerEditorCommand } from '$/util/editorCommands';
   import { env } from '$/util/env';
   import { shouldShowEditorChooser } from '$/util/migration/domainMigration';
   import { notify } from '$/util/notify';
@@ -244,6 +245,26 @@
       }
       event.preventDefault();
       onSave();
+      return;
+    }
+    // Global undo/redo: when focus is on the page (e.g. after clicking the
+    // diagram canvas) rather than in an editor or input, forward the
+    // shortcut to the code editor — otherwise Ctrl+Z would be a no-op.
+    if (!event.repeat && (event.ctrlKey || event.metaKey)) {
+      const key = event.key.toLowerCase();
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+      if (isUndo || isRedo) {
+        const target = event.target as HTMLElement | null;
+        const inEditable =
+          target?.closest(
+            'input, textarea, [contenteditable="true"], .monaco-editor, .cm-editor'
+          ) !== null;
+        if (!inEditable) {
+          event.preventDefault();
+          triggerEditorCommand(isUndo ? 'undo' : 'redo');
+        }
+      }
     }
   }} />
 
