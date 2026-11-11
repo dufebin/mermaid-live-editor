@@ -11,6 +11,9 @@ Environment=HOST=0.0.0.0
 Environment=PORT=3000
 Environment=STATIC_DIR=/data/opensource/mermaid-live-editor/bin/static
 Environment=DATA_DIR=/data/opensource/mermaid-live-editor/server-data
+# AI 网关配置读 .env / .env.local（gitignored，与开发模式共用一份；前缀 - 表示文件缺失不报错）
+EnvironmentFile=-/data/opensource/mermaid-live-editor/.env
+EnvironmentFile=-/data/opensource/mermaid-live-editor/.env.local
 Restart=on-failure
 RestartSec=3
 

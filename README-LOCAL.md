@@ -176,7 +176,7 @@ curl -s localhost:3000/edit | head -c 200        # 应返回 SPA HTML
 curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unauthorized"}
 ```
 
-> 注意：**AI 编辑在生产模式下暂不可用**（Go 未代理 `/ai` 网关，待后续补齐）。下文"常见问题"里的 AI 排查步骤仅适用于开发模式。
+> **AI 编辑**：生产与开发共用 `.env.local` 里的 `AI_PROXY_TARGET` / `AI_PROXY_KEY`（该文件 gitignored，不会上传；systemd 通过 `EnvironmentFile` 读取）。生产模式下 `/ai` 挂在登录会话之后——未登录请求直接 401，密钥只存在于服务端。改了 `.env.local` 后 `sudo systemctl restart mermaid-server` 生效。
 
 > 回滚前端 = 把 `bin/static.prev` 换回 `bin/static` 后 restart。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart（`go build -o` 对运行中的二进制安全替换）。
 

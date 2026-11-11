@@ -11,15 +11,16 @@ import (
 // assets, so they are safe to cache forever.
 const immutableCache = "public, max-age=31536000, immutable"
 
-// staticHandler serves dir on the same port as the API. /api/* (and any
-// non-GET/HEAD request) falls through to the API mux; existing files are
-// served statically; everything else gets the adapter-static SPA fallback
+// staticHandler serves dir on the same port as the API. /api/* and /ai/*
+// (and any non-GET/HEAD request) fall through to the API mux; existing files
+// are served statically; everything else gets the adapter-static SPA fallback
 // (404.html) with status 200 so client-side routing takes over.
 func staticHandler(dir string, api http.Handler) http.Handler {
 	files := http.FileServer(http.Dir(dir))
 	fallback := filepath.Join(dir, "404.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" ||
+			strings.HasPrefix(r.URL.Path, "/ai/") ||
 			(r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			api.ServeHTTP(w, r)
 			return

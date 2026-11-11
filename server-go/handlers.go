@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -28,6 +30,16 @@ func newHandler(s *store, secret []byte) http.Handler {
 	mux.HandleFunc("/api/diagrams/", a.requireAuth(a.diagramItem))
 	mux.HandleFunc("/api/export", a.requireAuth(a.export))
 	mux.HandleFunc("/api/import", a.requireAuth(a.importEndpoint))
+	if aiTarget := os.Getenv("AI_PROXY_TARGET"); aiTarget != "" {
+		ai, err := aiProxyHandler(aiTarget, os.Getenv("AI_PROXY_KEY"))
+		if err != nil {
+			log.Printf("invalid AI_PROXY_TARGET %q: %v — /ai stays unrouted", aiTarget, err)
+		} else {
+			mux.HandleFunc("/ai/", a.requireAuth(func(w http.ResponseWriter, r *http.Request, _ string) {
+				ai.ServeHTTP(w, r)
+			}))
+		}
+	}
 	mux.HandleFunc("/", a.notFound)
 	return mux
 }
