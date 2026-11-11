@@ -2,6 +2,7 @@
   import type { EditorProps } from '$/types';
   import { aiEnabled, editDiagramWithAI } from '$/util/ai';
   import { findDefinitionLine } from '$/util/diagramNodes';
+  import { setEditor } from '$/util/editorCommands';
   import { env } from '$/util/env';
   import { notify } from '$/util/notify';
   import { selectedNode } from '$/util/selectedNode.svelte';
@@ -134,6 +135,7 @@
     initEditor(monaco);
     errorDebug();
     editor = monaco.editor.create(divElement, editorOptions);
+    setEditor(editor);
     aiPromptManager.setEditor(editor);
     decorationsCollection = editor.createDecorationsCollection([]);
 
@@ -185,6 +187,7 @@
     renderAIPromptGutterGlyphIcon();
 
     return () => {
+      setEditor(undefined);
       resizeObserver.disconnect();
       jsonModel.dispose();
       mermaidModel.dispose();

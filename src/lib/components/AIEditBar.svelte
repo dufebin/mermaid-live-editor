@@ -2,6 +2,7 @@
   import { Button } from '$/components/ui/button';
   import { TID } from '$/constants';
   import { editDiagramWithAI } from '$/util/ai';
+  import { triggerEditorCommand } from '$/util/editorCommands';
   import { notify } from '$/util/notify';
   import { clearSelectedNode, selectedNode } from '$/util/selectedNode.svelte';
   import { clearSelectedNodes } from '$/util/selectedNodes.svelte';
@@ -70,6 +71,19 @@
     onkeydown={(event) => {
       if (event.isComposing) {
         return;
+      }
+      // With an empty input, undo/redo forwards to the code editor so
+      // Ctrl+Z right after an AI edit reverts the generated code (the AI
+      // flow refocuses this bar; a native undo here would be a no-op).
+      if (!input && (event.ctrlKey || event.metaKey)) {
+        const key = event.key.toLowerCase();
+        const isUndo = key === 'z' && !event.shiftKey;
+        const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+        if (isUndo || isRedo) {
+          event.preventDefault();
+          triggerEditorCommand(isUndo ? 'undo' : 'redo');
+          return;
+        }
       }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
