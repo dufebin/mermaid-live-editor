@@ -134,12 +134,20 @@ curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unaut
 
 ```bash
 sudo systemctl stop mermaid-frontend
+sudo systemctl disable mermaid-frontend  # 防止开发期间重启机器把生产进程带回来，与 18790 双写 SQLite
 # 起存储服务 + vite dev（vite 把 /api 代理到 18790）：
 sudo systemctl start mermaid-storage
 pnpm dev
 ```
 
-> 开发模式期间 `mermaid-live` 和 `mermaid-frontend` 保持停止；两者已 disable，重启机器也不会回来抢 3000 端口。
+> 开发模式期间 `mermaid-live` 和 `mermaid-frontend` 均已停止并 disable，重启机器也不会有任何服务抢 3000 端口或双写 SQLite。
+
+### 回到生产模式（与首次切换对称）
+
+```bash
+sudo systemctl stop mermaid-storage     # 必须先停，避免双写 SQLite
+sudo systemctl enable --now mermaid-frontend
+```
 
 ### 更新流程（改代码后上线）
 
