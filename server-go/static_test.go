@@ -38,6 +38,16 @@ func TestStaticHandler(t *testing.T) {
 		t.Fatalf("asset: %d %q %q", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
 	}
 
+	// hashed /_app/ assets are immutable; the SPA fallback never is
+	if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset cache-control: %q", cc)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/_app/immutable/assets/missing.css", nil))
+	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "" {
+		t.Fatalf("fallback cache-control: %d %q", rec.Code, rec.Header().Get("Cache-Control"))
+	}
+
 	// root serves index.html
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))

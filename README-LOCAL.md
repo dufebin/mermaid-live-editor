@@ -156,6 +156,8 @@ pnpm build:prod
 sudo systemctl restart mermaid-frontend   # 数据不丢：SQLite 文件持久 + 迁移幂等
 ```
 
+> 注意：构建期间（vite 会先清空 `docs/`）线上会出现短暂白屏/资源 404 回退，属预期——请在无人使用时执行。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart。
+
 ## 常见问题
 
 - **端口被占**：`ss -tlnp "sport = :3000"`（或 `:18790`）看占用进程，`kill <pid>` 后重启对应服务
