@@ -6,10 +6,10 @@ After=network.target
 Type=simple
 WorkingDirectory=/data/opensource/mermaid-live-editor
 # build with: pnpm build:prod
-ExecStart=/data/opensource/mermaid-live-editor/server-go/bin/mermaid-storage
+ExecStart=/data/opensource/mermaid-live-editor/bin/mermaid-storage
 Environment=HOST=0.0.0.0
 Environment=PORT=3000
-Environment=STATIC_DIR=docs
+Environment=STATIC_DIR=bin/static
 Restart=on-failure
 RestartSec=3
 

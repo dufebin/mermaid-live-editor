@@ -6,6 +6,10 @@
 /build
 /coverage
 /docs
+# Compiled deployment artifacts (bin/ also hosts tracked upstream scripts)
+/bin/mermaid-storage
+/bin/static/
+/bin/static.prev/
 /functions
 /node_modules
 /snapshots.js

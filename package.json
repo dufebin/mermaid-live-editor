@@ -10,7 +10,7 @@
     "dev:test": "pnpm dev",
     "server": "make -C server-go run",
     "build": "pnpm build:embed && vite build",
-    "build:prod": "pnpm build && make -C server-go build",
+    "build:prod": "pnpm build && make -C server-go build && node scripts/assemble-bin.mjs",
     "build:embed": "vite build --config vite.embed.config.js",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

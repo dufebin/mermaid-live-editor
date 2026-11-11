@@ -97,12 +97,43 @@ pnpm test:e2e:auth
 
 ## 生产部署（编译版）
 
-生产模式用单个 Go 进程同时提供静态前端（`docs/`，vite 构建产物）和存储 API，监听 `0.0.0.0:3000`，不再需要 vite dev server。
+生产模式用单个 Go 进程同时提供静态前端（`bin/static/`）和存储 API，监听 `0.0.0.0:3000`，不再需要 vite dev server。
 
 ### 构建产物
 
+所有编译产物集中在仓库根的 `bin/` 目录：
+
+```
+bin/
+  mermaid-storage   # Go 二进制（API + 静态服务）
+  static/           # 前端静态文件（从 docs/ 组装，供 STATIC_DIR 使用）
+  static.prev/      # 上一代前端（保留一代，用于回滚；可随时删）
+```
+
 ```bash
-pnpm build:prod   # 产出 docs/（vite 静态站点）+ server-go/bin/mermaid-storage（Go 二进制）
+pnpm build:prod   # pnpm build（写 docs/）→ make build（写 bin/mermaid-storage）→ 组装 bin/static/
+```
+
+> `pnpm build` 的输出目录仍是 `docs/`（上游/Docker/Pages 约定不变）；`docs/` 只是构建中间产物，可随时删除回收空间。
+
+### 启动方式
+
+**systemd（生产标准方式）**：
+
+```bash
+sudo systemctl start mermaid-frontend      # 启动
+sudo systemctl restart mermaid-frontend    # 重启（更新后生效）
+sudo systemctl status mermaid-frontend     # 状态
+journalctl -u mermaid-frontend -f          # 看日志
+```
+
+**手动一次性运行（调试用）**——⚠️ 必须先停掉 systemd 生产单元，否则两个进程双写同一个 SQLite：
+
+```bash
+sudo systemctl stop mermaid-frontend
+cd /data/opensource/mermaid-live-editor
+HOST=0.0.0.0 PORT=3000 STATIC_DIR=bin/static DATA_DIR=server-data ./bin/mermaid-storage
+# Ctrl+C 结束；结束后 sudo systemctl start mermaid-frontend 恢复生产
 ```
 
 ### 首次切换（从 dev 模式到生产模式）
@@ -126,7 +157,7 @@ curl -s localhost:3000/edit | head -c 200        # 应返回 SPA HTML
 curl -s localhost:3000/api/auth/me               # 应返回 401 {"error":"unauthorized"}
 ```
 
-> ⚠️ **生产运行时禁止 `mermaid-storage`（18790）同时运行**——两个进程双写同一个 SQLite 文件会损坏数据。生产单元（`systemd/mermaid-frontend.service`）因此不依赖 `Wants=mermaid-storage.service`，`STATIC_DIR=docs` 让同一个二进制直接服务前端。
+> ⚠️ **生产运行时禁止 `mermaid-storage`（18790）同时运行**——两个进程双写同一个 SQLite 文件会损坏数据。生产单元（`systemd/mermaid-frontend.service`）因此不依赖 `Wants=mermaid-storage.service`，`STATIC_DIR=bin/static` 让同一个二进制直接服务前端。
 
 > 注意：**AI 编辑在生产模式下暂不可用**（Go 未代理 `/ai` 网关，待后续补齐）。下文"常见问题"里的 AI 排查步骤仅适用于开发模式。
 
@@ -156,7 +187,7 @@ pnpm build:prod
 sudo systemctl restart mermaid-frontend   # 数据不丢：SQLite 文件持久 + 迁移幂等
 ```
 
-> 注意：构建期间（vite 会先清空 `docs/`）线上会出现短暂白屏/资源 404 回退，属预期——请在无人使用时执行。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart。
+> 前端零停机：构建写 `docs/`、线上始终服务旧的 `bin/static/`，组装换新后才由 restart 生效。纯后端改动可跳过前端构建，直接 `make -C server-go build` 后 restart（`go build -o` 对运行中的二进制安全替换）。回滚前端 = 把 `bin/static.prev` 换回 `bin/static` 后 restart。
 
 ## 常见问题
 

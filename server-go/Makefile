@@ -1,10 +1,13 @@
+BIN := ../bin/mermaid-storage
+
 .PHONY: build run test vet
 
 build:
-	go build -o bin/mermaid-storage .
+	go build -o $(BIN) .
 
+# Run from the repo root so relative DATA_DIR/STATIC_DIR resolve like systemd.
 run: build
-	./bin/mermaid-storage
+	cd .. && ./bin/mermaid-storage
 
 test:
 	go test ./... -count=1
